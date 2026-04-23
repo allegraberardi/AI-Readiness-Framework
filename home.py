@@ -1,5 +1,11 @@
 import streamlit as st
 import pandas as pd
+from dotenv import load_dotenv
+import os
+from llm import mostra_suggerimenti_llm
+from bias import trova_attributi_sensibili
+
+load_dotenv()
 
 def mostra_home():
     st.title("AI Readiness Framework")
@@ -40,14 +46,54 @@ def mostra_home():
         help="Formato supportato: .csv — Max 200 MB"
     )
 
+    df = None
     if file is not None:
         try:
             df = pd.read_csv(file, sep=None, engine="python")
-            st.success(f"✅ File caricato correttamente — {df.shape[0]} righe × {df.shape[1]} colonne")
+            st.success(f"File caricato correttamente — {df.shape[0]} righe × {df.shape[1]} colonne")
             st.dataframe(df.head(5), use_container_width=True)
             st.session_state.dataset = df
         except Exception as e:
             st.error(f"Errore nella lettura del file: {e}")
+
+    # ── Selezione target e attributi sensibili ───────────────────────────────
+    if df is not None and settore != "Seleziona..." and descrizione.strip():
+        st.subheader("4. Configurazione analisi bias")
+
+        modalita = st.radio(
+            "Come vuoi identificare gli attributi sensibili?",
+            ["🤖 Automatico con LLM", "✋ Manuale"],
+            horizontal=True
+        )
+
+        if modalita == "🤖 Automatico con LLM":
+            target, attributi = mostra_suggerimenti_llm(df, descrizione, settore)
+        else:
+            suggeriti = trova_attributi_sensibili(df)
+            if suggeriti:
+                st.info(f"Ho rilevato automaticamente questi possibili attributi sensibili: **{', '.join(suggeriti)}**")
+
+            colonne = ["Nessuna — salta questa dimensione"] + list(df.columns)
+            target_sel = st.selectbox("Colonna target", colonne, key="bias_target")
+            target = target_sel if target_sel != "Nessuna — salta questa dimensione" else None
+
+            if target:
+                attributi = st.multiselect(
+                    "Attributi sensibili",
+                    [col for col in df.columns if col != target],
+                    default=[col for col in suggeriti if col != target],
+                    key="bias_attributi"
+                )
+            else:
+                attributi = []
+
+        st.session_state.target = target
+        st.session_state.attributi_sensibili = attributi
+
+    elif df is not None:
+        st.info("Completa settore e descrizione per configurare l'analisi del bias.")
+        st.session_state.target = None
+        st.session_state.attributi_sensibili = []
 
     st.divider()
 
@@ -57,7 +103,7 @@ def mostra_home():
             st.warning("Seleziona il settore di applicazione prima di continuare.")
         elif not descrizione.strip():
             st.warning("Inserisci una descrizione del caso d'uso prima di continuare.")
-        elif st.session_state.dataset is None:
+        elif st.session_state.get("dataset") is None:
             st.warning("Carica il dataset CSV prima di continuare.")
         else:
             st.session_state.settore = settore

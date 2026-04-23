@@ -17,6 +17,10 @@ if "descrizione" not in st.session_state:
     st.session_state.descrizione = None
 if "governance" not in st.session_state:
     st.session_state.governance = {}
+if "target" not in st.session_state:
+    st.session_state.target = None
+if "attributi_sensibili" not in st.session_state:
+    st.session_state.attributi_sensibili = []
 
 # ── Importa le pagine ────────────────────────────────────────────────────────
 from home import mostra_home
