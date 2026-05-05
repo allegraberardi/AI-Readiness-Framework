@@ -2,28 +2,91 @@ import pandas as pd
 import streamlit as st
 
 # ── Keyword per identificare automaticamente attributi sensibili ──────────────
-KEYWORD_SENSIBILI = [
-    "gender", "genere", "sex", "sesso",
-    "age", "età", "eta", "age_group",
-    "race", "razza", "ethnicity", "etnia",
-    "nationality", "nazionalità", "country", "paese",
-    "religion", "religione",
-    "disability", "disabilità",
-    "income", "reddito", "salary", "stipendio",
-    "marital", "stato_civile",
-    "education", "istruzione"
-]
+# Basate sulle categorie speciali dell'Art. 9 GDPR e attributi protetti AI Act
+KEYWORD_SENSIBILI = {
+    # Genere e sesso
+    "genere_sesso": ["gender", "genere", "sex", "sesso"],
+
+    # Età
+    "eta": ["age", "età", "eta", "age_group", "birth", "nascita", "dob", "born"],
+
+    # Origine razziale ed etnica (Art. 9 GDPR)
+    "etnia": ["race", "razza", "ethnicity", "etnia", "ethnic", "origin", "origine"],
+
+    # Nazionalità e provenienza
+    "nazionalita": ["nationality", "nazionalità", "country", "paese", "nation", "nazione"],
+
+    # Credenze religiose e filosofiche (Art. 9 GDPR)
+    "religione": ["religion", "religione", "faith", "credo", "church", "chiesa",
+                  "belief", "credenza", "confession", "confessione"],
+
+    # Opinioni politiche (Art. 9 GDPR)
+    "politica": ["political", "politico", "party", "partito", "vote", "voto",
+                 "ideology", "ideologia", "opinion", "opinione"],
+
+    # Orientamento sessuale e vita sessuale (Art. 9 GDPR)
+    "orientamento": ["sexual", "sessuale", "orientation", "orientamento",
+                     "lgbt", "gay", "lesbian", "bisexual"],
+
+    # Dati sulla salute (Art. 9 GDPR)
+    "salute": ["health", "salute", "medical", "medico", "disease", "malattia",
+               "diagnosis", "diagnosi", "illness", "disorder", "condition",
+               "patient", "paziente", "hospital", "ospedale", "clinical"],
+
+    # Disabilità (Art. 9 GDPR)
+    "disabilita": ["disability", "disabilità", "disabled", "disabile",
+                   "handicap", "impairment", "special_needs"],
+
+    # Dati genetici (Art. 9 GDPR)
+    "genetica": ["genetic", "genetico", "dna", "gene", "genome", "genoma",
+                 "hereditary", "ereditario"],
+
+    # Dati biometrici (Art. 9 GDPR)
+    "biometria": ["biometric", "biometrico", "fingerprint", "impronta",
+                  "facial", "facciale", "iris", "retina", "voice", "voce"],
+
+    # Appartenenza sindacale (Art. 9 GDPR)
+    "sindacato": ["union", "sindacato", "trade_union", "labor", "labour",
+                  "sindacale", "membership"],
+
+    # Reddito e situazione economica
+    "reddito": ["income", "reddito", "salary", "stipendio", "wage", "earning",
+                "wealth", "ricchezza", "poverty", "povertà"],
+
+    # Stato civile e famiglia
+    "stato_civile": ["marital", "stato_civile", "married", "sposato",
+                     "divorced", "divorziato", "family", "famiglia"],
+
+    # Istruzione
+    "istruzione": ["education", "istruzione", "degree", "laurea",
+                   "school", "scuola", "qualification"],
+}
+
+# Lista piatta per ricerca rapida
+KEYWORD_LISTA = [kw for gruppo in KEYWORD_SENSIBILI.values() for kw in gruppo]
+
 
 def trova_attributi_sensibili(df):
-    """Cerca colonne con nomi simili a keyword sensibili."""
+    """Cerca colonne con nomi simili a keyword sensibili GDPR/AI Act."""
     trovati = []
     for col in df.columns:
         col_lower = col.lower().replace(" ", "_")
-        for keyword in KEYWORD_SENSIBILI:
+        for keyword in KEYWORD_LISTA:
             if keyword in col_lower:
                 trovati.append(col)
                 break
     return trovati
+
+
+def categoria_gdpr(col):
+    """Restituisce la categoria GDPR di una colonna se è sensibile."""
+    col_lower = col.lower().replace(" ", "_")
+    for categoria, keywords in KEYWORD_SENSIBILI.items():
+        for kw in keywords:
+            if kw in col_lower:
+                return categoria
+    return None
+
 
 
 def calcola_bias(df, target, attributi_sensibili):
@@ -128,7 +191,7 @@ def calcola_bias(df, target, attributi_sensibili):
             "Attributo": attr,
             "Gruppo privilegiato": f"{gruppo_privilegiato} ({round(prop_privilegiato*100,2)}%)",
             "Gruppo svantaggiato": f"{gruppo_svantaggiato} ({round(prop_svantaggiato*100,2)}%)",
-            "SPD": f"{spd} (soglia: |SPD| < 0.1)",
+            "Statistical Parity Difference": f"{spd} (soglia: |SPD| < 0.1)",
             "Disparate Impact": f"{di} (soglia: 0.8 ≤ DI ≤ 1.25)",
             "Class Imbalance": f"{imbalance}% di differenza tra gruppi",
             "Gravità": gravita_complessiva
@@ -155,3 +218,60 @@ def calcola_bias(df, target, attributi_sensibili):
         "stato": stato,
         "dettaglio": risultati_dettaglio
     }
+
+
+def commento_llm_bias(risultati_dettaglio, descrizione, settore, target):
+    """
+    Chiede all'LLM di interpretare i risultati del bias nel contesto del caso d'uso.
+    """
+    from openai import OpenAI
+    from dotenv import load_dotenv
+    import os
+    import json
+
+    load_dotenv()
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+    )
+
+    riassunto = []
+    for r in risultati_dettaglio:
+        riassunto.append(
+            f"Attributo: {r['Attributo']} — "
+            f"Gruppo privilegiato: {r['Gruppo privilegiato']} — "
+            f"Gruppo svantaggiato: {r['Gruppo svantaggiato']} — "
+            f"Statistical Parity Difference: {r['Statistical Parity Difference']} — "
+            f"Disparate Impact: {r['Disparate Impact']} — "
+            f"Class Imbalance: {r['Class Imbalance']} — "
+            f"Gravità: {r['Gravità']}"
+        )
+
+    prompt = f"""Sei un esperto di AI fairness e del Regolamento Europeo sull'Intelligenza Artificiale (AI Act).
+
+Analizza i risultati del bias per questo dataset e fornisci una valutazione contestualizzata.
+
+CASO D'USO: {descrizione}
+SETTORE (Allegato III AI Act): {settore}
+VARIABILE TARGET: {target}
+
+RISULTATI ANALISI BIAS:
+{chr(10).join(riassunto)}
+
+Fornisci:
+1. Una valutazione complessiva del bias nel dataset in relazione al caso d'uso
+2. I gruppi più a rischio di discriminazione
+3. Una raccomandazione concreta per mitigare il bias in riferimento all'Art. 10(2)(f) e (g) dell'AI Act
+
+Sii conciso (massimo 5 righe) e preciso."""
+
+    try:
+        response = client.chat.completions.create(
+            model="mistralai/mistral-large-2512",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=400,
+            temperature=0.2
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Errore durante l'analisi LLM: {str(e)}"

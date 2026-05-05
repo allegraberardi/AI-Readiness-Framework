@@ -48,7 +48,7 @@ Se non riesci a identificare il target o gli attributi sensibili con certezza, m
 
     try:
         response = client.chat.completions.create(
-            model="openai/gpt-3.5-turbo",
+            model="mistralai/mistral-large-2512",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500,
             temperature=0.1

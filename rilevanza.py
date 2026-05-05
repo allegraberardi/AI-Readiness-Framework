@@ -1,29 +1,51 @@
 import pandas as pd
-import streamlit as st
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
+import json
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
 
-def prepara_testo_colonne(df):
+load_dotenv()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+
+def get_client():
+    return OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=OPENROUTER_API_KEY,
+    )
+
+
+def pulisci_testo(testo):
+    """Rimuove caratteri speciali che potrebbero rompere il JSON."""
+    return str(testo).replace('"', "'").replace('\\', '').replace('\n', ' ').strip()
+
+
+def descrivi_colonna(df, col):
     """
-    Prepara una rappresentazione testuale delle colonne del dataset
-    combinando nome colonna, tipo di dato e valori unici (per categoriche).
+    Genera una descrizione automatica di una colonna basata
+    sul tipo di dato e i valori presenti.
     """
-    testi = []
-    for col in df.columns:
-        testo = col.replace("_", " ").lower()
-        # Aggiungi i valori unici per colonne categoriche
-        if df[col].dtype == "object":
-            valori = df[col].dropna().unique()[:10]  # max 10 valori
-            testo += " " + " ".join([str(v).lower() for v in valori])
-        testi.append(testo)
-    return testi
+    dtype = df[col].dtype
+    n_unici = df[col].nunique()
+    n_nulli = df[col].isnull().sum()
+
+    if dtype == "object":
+        valori = df[col].dropna().unique()[:5]
+        valori_puliti = [pulisci_testo(v) for v in valori]
+        return f"Categorica — {n_unici} valori unici, es: {', '.join(valori_puliti)}"
+    elif dtype in ["int64", "float64"]:
+        min_val = round(df[col].min(), 2)
+        max_val = round(df[col].max(), 2)
+        media = round(df[col].mean(), 2)
+        return f"Numerica — min: {min_val}, max: {max_val}, media: {media}"
+    else:
+        return f"Tipo: {dtype} — {n_unici} valori unici"
 
 
 def calcola_rilevanza(df, descrizione, settore):
     """
-    Calcola la rilevanza del dataset rispetto alla descrizione del caso d'uso
-    usando TF-IDF e cosine similarity.
+    Usa l'LLM per valutare la rilevanza di ogni colonna del dataset
+    rispetto alla descrizione del caso d'uso e al settore.
     """
     if not descrizione or not descrizione.strip():
         return {
@@ -33,77 +55,111 @@ def calcola_rilevanza(df, descrizione, settore):
             "score_medio": 0
         }
 
-    # Prepara i testi delle colonne
-    testi_colonne = prepara_testo_colonne(df)
+    # Prepara descrizione delle colonne
+    colonne_info = {}
+    for col in df.columns:
+        colonne_info[col] = descrivi_colonna(df, col)
 
-    # Combina descrizione e settore per arricchire il contesto
-    testo_query = descrizione.lower() + " " + settore.lower()
+    colonne_testo = "\n".join([f"- {col}: {desc}" for col, desc in colonne_info.items()])
 
-    # Calcola TF-IDF e cosine similarity
+    prompt = f"""Sei un esperto di AI e del Regolamento Europeo sull'Intelligenza Artificiale (AI Act).
+
+Devi valutare la rilevanza di ogni colonna di un dataset rispetto al caso d'uso descritto dall'utente.
+
+CASO D'USO: {descrizione}
+SETTORE AI ACT (Allegato III): {settore}
+
+COLONNE DEL DATASET:
+{colonne_testo}
+
+Per ogni colonna assegna:
+- uno score da 0 a 100 che indica quanto è rilevante per il caso d'uso (0 = completamente irrilevante, 100 = fondamentale)
+- una breve spiegazione del perché
+
+Rispondi SOLO in questo formato JSON, senza testo aggiuntivo:
+{{
+  "valutazioni": [
+    {{
+      "colonna": "nome_colonna",
+      "score": 85,
+      "spiegazione": "Spiegazione breve del perché è rilevante o no"
+    }}
+  ],
+  "commento_generale": "Valutazione complessiva della rilevanza del dataset per il caso d'uso"
+}}"""
+
     try:
-        vectorizer = TfidfVectorizer()
-        tutti_testi = [testo_query] + testi_colonne
-        tfidf_matrix = vectorizer.fit_transform(tutti_testi)
+        client = get_client()
+        response = client.chat.completions.create(
+            model="mistralai/mistral-large-2512",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+            temperature=0.1
+        )
 
-        # Similarità tra query e ogni colonna
-        similarita = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:]).flatten()
+        testo = response.choices[0].message.content.strip()
+        testo = testo.replace("```json", "").replace("```", "").strip()
+        risultato_llm = json.loads(testo)
 
-    except Exception:
-        # Se TF-IDF fallisce (es. testo troppo corto) usa keyword matching
-        similarita = []
-        parole_query = set(testo_query.lower().split())
-        for testo_col in testi_colonne:
-            parole_col = set(testo_col.lower().split())
-            if len(parole_col) == 0:
-                similarita.append(0)
+        # Costruisci dettaglio per ogni colonna
+        dettaglio = []
+        scores = []
+
+        for val in risultato_llm.get("valutazioni", []):
+            score = val.get("score", 0)
+            scores.append(score)
+
+            if score >= 60:
+                rilevanza = "ALTA"
+                gravita = "BASSA"
+            elif score >= 30:
+                rilevanza = "MEDIA"
+                gravita = "MEDIA"
             else:
-                overlap = len(parole_query & parole_col) / len(parole_col)
-                similarita.append(overlap)
-        similarita = np.array(similarita)
+                rilevanza = "BASSA"
+                gravita = "ALTA"
 
-    # Costruisci dettaglio per ogni colonna
-    dettaglio = []
-    for col, score in zip(df.columns, similarita):
-        score_pct = round(score * 100, 1)
-        if score_pct >= 20:
-            rilevanza = "ALTA"
-            gravita = "BASSA"
-        elif score_pct >= 5:
-            rilevanza = "MEDIA"
-            gravita = "MEDIA"
+            dettaglio.append({
+                "Colonna": val.get("colonna", ""),
+                "Descrizione": colonne_info.get(val.get("colonna", ""), ""),
+                "Score rilevanza": f"{score}/100",
+                "Rilevanza": rilevanza,
+                "Spiegazione LLM": val.get("spiegazione", ""),
+                "Gravità": gravita
+            })
+
+        # Ordina per score decrescente
+        dettaglio = sorted(dettaglio, key=lambda x: int(x["Score rilevanza"].split("/")[0]), reverse=True)
+
+        score_medio = round(sum(scores) / len(scores), 1) if scores else 0
+        n_irrilevanti = sum(1 for s in scores if s < 30)
+        pct_irrilevanti = round(n_irrilevanti / len(scores) * 100, 1) if scores else 0
+
+        commento = risultato_llm.get("commento_generale", "")
+
+        # Stato finale
+        if pct_irrilevanti > 50:
+            stato = "NON CONFORME"
+        elif pct_irrilevanti > 25 or score_medio < 50:
+            stato = "ATTENZIONE"
         else:
-            rilevanza = "BASSA"
-            gravita = "ALTA"
+            stato = "CONFORME"
 
-        dettaglio.append({
-            "Colonna": col,
-            "Score di rilevanza": f"{score_pct}%",
-            "Rilevanza": rilevanza,
-            "Gravità": gravita
-        })
+        return {
+            "stato": stato,
+            "score_medio": score_medio,
+            "pct_irrilevanti": pct_irrilevanti,
+            "commento": commento,
+            "dettaglio": dettaglio,
+            "messaggio": None
+        }
 
-    # Ordina per score decrescente
-    dettaglio = sorted(dettaglio, key=lambda x: float(x["Score di rilevanza"].replace("%", "")), reverse=True)
-
-    # Score medio
-    score_medio = round(np.mean(similarita) * 100, 1)
-
-    # Colonne irrilevanti (score < 5%)
-    n_irrilevanti = sum(1 for d in dettaglio if d["Rilevanza"] == "BASSA")
-    pct_irrilevanti = round(n_irrilevanti / len(df.columns) * 100, 1)
-
-    # Stato finale
-    if pct_irrilevanti > 50:
-        stato = "NON CONFORME"
-    elif pct_irrilevanti > 25:
-        stato = "ATTENZIONE"
-    else:
-        stato = "CONFORME"
-
-    return {
-        "stato": stato,
-        "score_medio": score_medio,
-        "pct_irrilevanti": pct_irrilevanti,
-        "dettaglio": dettaglio,
-        "messaggio": None
-    }
+    except Exception as e:
+        return {
+            "stato": "ATTENZIONE",
+            "score_medio": 0,
+            "pct_irrilevanti": 0,
+            "commento": "",
+            "dettaglio": [],
+            "messaggio": f"Errore durante l'analisi LLM della rilevanza: {str(e)}"
+        }

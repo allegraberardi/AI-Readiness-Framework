@@ -6,8 +6,8 @@ from analisi import (
     analizza_governance,
     calcola_score_aggregato
 )
-from rappresentativita import analizza_rappresentativita
-from bias import calcola_bias
+from rappresentativita import analizza_rappresentativita, mostra_rappresentativita_con_grafici
+from bias import calcola_bias, commento_llm_bias
 from rilevanza import calcola_rilevanza
 
 def semaforo(stato):
@@ -18,7 +18,42 @@ def semaforo(stato):
     else:
         return "🔴"
 
-def mostra_dimensione(titolo, riferimento, risultato, raccomandazione):
+# Soglie per ogni dimensione
+SOGLIE = {
+    "Completezza": [
+        ("🟢 Conforme", "Valori mancanti < 5%"),
+        ("🟡 Attenzione", "Valori mancanti tra 5% e 15%"),
+        ("🔴 Non conforme", "Valori mancanti > 15%"),
+    ],
+    "Rappresentatività": [
+        ("🟢 Conforme", "Tutte le classi hanno più di 100 esempi"),
+        ("🟡 Attenzione", "Almeno una classe ha tra 50 e 100 esempi"),
+        ("🔴 Non conforme", "Almeno una classe ha meno di 50 esempi"),
+    ],
+    "Assenza di errori": [
+        ("🟢 Conforme", "Nessun duplicato o outlier significativo"),
+        ("🟡 Attenzione", "Duplicati tra 5% e 10% oppure outlier tra 1% e 5%"),
+        ("🔴 Non conforme", "Duplicati > 10% oppure outlier > 5%"),
+    ],
+    "Assenza di bias": [
+        ("🟢 Conforme", "Statistical Parity Difference < 0.1 e Disparate Impact tra 0.8 e 1.25 e Class Imbalance < 20%"),
+        ("🟡 Attenzione", "Statistical Parity Difference tra 0.1 e 0.2 oppure Disparate Impact tra 0.6 e 0.8 oppure Class Imbalance tra 20% e 40%"),
+        ("🔴 Non conforme", "Statistical Parity Difference > 0.2 oppure Disparate Impact < 0.6 oppure Class Imbalance > 40%"),
+    ],
+    "Rilevanza": [
+        ("🟢 Conforme", "Score medio LLM > 60/100 e colonne irrilevanti < 25%"),
+        ("🟡 Attenzione", "Score medio LLM tra 30 e 60 oppure colonne irrilevanti tra 25% e 50%"),
+        ("🔴 Non conforme", "Score medio LLM < 30 oppure colonne irrilevanti > 50%"),
+    ],
+    "Governance e Consenso": [
+        ("🟢 Conforme", "Tutte le informazioni documentate"),
+        ("🟡 Attenzione", "Alcune informazioni non disponibili (Non lo so)"),
+        ("🔴 Non conforme", "Informazioni chiave assenti (consenso, data card, documentazione raccolta)"),
+    ],
+}
+
+
+def mostra_dimensione(titolo, riferimento, risultato, raccomandazione, commento_extra=None):
     stato = risultato["stato"]
     emoji = semaforo(stato)
 
@@ -36,9 +71,18 @@ def mostra_dimensione(titolo, riferimento, risultato, raccomandazione):
         if risultato.get("messaggio"):
             st.info(risultato["messaggio"])
 
+        if commento_extra:
+            st.info(f"**Valutazione LLM sui duplicati:** {commento_extra}")
+
         if risultato.get("dettaglio"):
             df_det = pd.DataFrame(risultato["dettaglio"])
             st.dataframe(df_det, use_container_width=True, hide_index=True)
+
+        # Soglie espandibili
+        if titolo in SOGLIE:
+            with st.expander("📏 Soglie utilizzate per questa dimensione"):
+                for label, desc in SOGLIE[titolo]:
+                    st.write(f"**{label}**: {desc}")
 
         st.divider()
 
@@ -100,7 +144,7 @@ def mostra_risultati():
     with st.spinner("Analisi del dataset in corso..."):
         res_completezza = analizza_completezza(df)
         res_rappresentativita = analizza_rappresentativita(df, settore)
-        res_errori = analizza_errori(df)
+        res_errori = analizza_errori(df, descrizione)
         res_governance = analizza_governance(governance)
         res_rilevanza = calcola_rilevanza(df, descrizione, settore)
 
@@ -155,16 +199,42 @@ def mostra_risultati():
     st.divider()
 
     # ── Dettaglio per dimensione ─────────────────────────────────────────────
-    mostra_dimensione(
-        titolo="Rilevanza",
-        riferimento="Art. 10, par. 3 AI Act — i dati devono essere pertinenti rispetto alle finalità previste",
-        risultato=res_rilevanza,
-        raccomandazione=(
-            f"Score medio di rilevanza: {res_rilevanza.get('score_medio', 0)}%. "
-            + ("Le colonne del dataset sono pertinenti al caso d'uso descritto." if res_rilevanza["stato"] == "CONFORME"
-               else f"Il {res_rilevanza.get('pct_irrilevanti', 0)}% delle colonne sembra poco pertinente al caso d'uso.")
+    # Rilevanza con commento LLM
+    with st.container():
+        stato_rile = res_rilevanza["stato"]
+        emoji_rile = semaforo(stato_rile)
+        st.markdown(f"### {emoji_rile} Rilevanza — {stato_rile}")
+        st.caption("📖 Riferimento normativo: Art. 10, par. 3 AI Act — i dati devono essere pertinenti rispetto alle finalità previste")
+
+        raccomandazione_rile = (
+            f"Score medio di rilevanza: {res_rilevanza.get('score_medio', 0)}/100. "
+            + ("Le colonne del dataset sono pertinenti al caso d'uso descritto." if stato_rile == "CONFORME"
+               else f"Il {res_rilevanza.get('pct_irrilevanti', 0)}% delle colonne risulta poco pertinente al caso d'uso.")
         )
-    )
+
+        if stato_rile == "CONFORME":
+            st.success(raccomandazione_rile)
+        elif stato_rile == "ATTENZIONE":
+            st.warning(raccomandazione_rile)
+        else:
+            st.error(raccomandazione_rile)
+
+        if res_rilevanza.get("messaggio"):
+            st.info(res_rilevanza["messaggio"])
+
+        if res_rilevanza.get("commento"):
+            st.info(f"**Commento LLM:** {res_rilevanza['commento']}")
+
+        if res_rilevanza.get("dettaglio"):
+            st.write("**Dettaglio per colonna:**")
+            df_rile = pd.DataFrame(res_rilevanza["dettaglio"])
+            st.dataframe(df_rile, use_container_width=True, hide_index=True)
+
+        with st.expander("📏 Soglie utilizzate per questa dimensione"):
+            for label, desc in SOGLIE["Rilevanza"]:
+                st.write(f"**{label}**: {desc}")
+
+        st.divider()
 
     mostra_dimensione(
         titolo="Completezza",
@@ -177,28 +247,67 @@ def mostra_risultati():
         )
     )
 
-    # Rappresentatività con sezione contestuale
-    mostra_rappresentativita(res_rappresentativita)
+    # Rappresentatività con grafici e LLM
+    mostra_rappresentativita_con_grafici(res_rappresentativita, descrizione, settore, df)
+
+    # Raccomandazione specifica in base al tipo di problema
+    n_dup = res_errori.get("n_duplicati", 0)
+    has_out = res_errori.get("has_outliers", False)
+    if n_dup > 0 and has_out:
+        raccomandazione_errori = f"Rilevati {n_dup} duplicati e valori anomali nelle colonne indicate — verificare e correggere prima di procedere."
+    elif n_dup > 0:
+        raccomandazione_errori = f"Rilevati {n_dup} duplicati nel dataset — valutare se rimuoverli in base al caso d'uso."
+    elif has_out:
+        raccomandazione_errori = "Rilevati valori anomali nelle colonne indicate — verificare se sono errori o valori legittimi."
+    else:
+        raccomandazione_errori = "Nessun errore significativo rilevato."
 
     mostra_dimensione(
         titolo="Assenza di errori",
         riferimento="Art. 10, par. 3 AI Act — i dati devono essere esenti da errori nella misura del possibile",
         risultato=res_errori,
-        raccomandazione=(
-            "Nessun errore significativo rilevato." if res_errori["stato"] == "CONFORME"
-            else "Rimuovere i duplicati e verificare i valori anomali nelle colonne indicate."
-        )
+        raccomandazione=raccomandazione_errori,
+        commento_extra=res_errori.get("commento_duplicati")
     )
 
-    mostra_dimensione(
-        titolo="Assenza di bias",
-        riferimento="Art. 10, par. 2(f) e 2(g) AI Act — esaminare le possibili distorsioni e adottare misure adeguate",
-        risultato=res_bias,
-        raccomandazione=(
-            "Nessun bias significativo rilevato." if res_bias["stato"] == "CONFORME"
-            else "Applicare tecniche di mitigazione del bias (re-sampling, re-weighting) sugli attributi critici."
-        )
-    )
+    # Messaggio se nessun duplicato
+    if n_dup == 0 and res_errori["stato"] != "CONFORME":
+        pass  # già gestito dalla raccomandazione
+
+    # Assenza di bias con commento LLM
+    with st.container():
+        stato_bias = res_bias["stato"]
+        emoji_bias = semaforo(stato_bias)
+        st.markdown(f"### {emoji_bias} Assenza di bias — {stato_bias}")
+        st.caption("📖 Riferimento normativo: Art. 10, par. 2(f) e 2(g) AI Act — esaminare le possibili distorsioni e adottare misure adeguate")
+
+        if stato_bias == "CONFORME":
+            st.success("Nessun bias significativo rilevato.")
+        elif stato_bias == "ATTENZIONE":
+            st.warning("Bias moderato rilevato — applicare tecniche di mitigazione sugli attributi critici.")
+        else:
+            st.error("Applicare tecniche di mitigazione del bias (re-sampling, re-weighting) sugli attributi critici.")
+
+        if res_bias.get("messaggio"):
+            st.info(res_bias["messaggio"])
+
+        if res_bias.get("dettaglio"):
+            df_bias = pd.DataFrame(res_bias["dettaglio"])
+            st.dataframe(df_bias, use_container_width=True, hide_index=True)
+
+            # Commento LLM
+            st.write("**Interpretazione LLM:**")
+            with st.spinner("L'LLM sta analizzando il bias..."):
+                commento_bias = commento_llm_bias(
+                    res_bias["dettaglio"], descrizione, settore, target or "non specificato"
+                )
+            st.info(commento_bias)
+
+        with st.expander("📏 Soglie utilizzate per questa dimensione"):
+            for label, desc in SOGLIE["Assenza di bias"]:
+                st.write(f"**{label}**: {desc}")
+
+        st.divider()
 
     mostra_dimensione(
         titolo="Governance e Consenso",

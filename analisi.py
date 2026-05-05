@@ -1,5 +1,20 @@
 import pandas as pd
 from rappresentativita import analizza_rappresentativita
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
+import json
+
+load_dotenv()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+
+def get_client():
+    return OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=OPENROUTER_API_KEY,
+    )
+
 
 def analizza_completezza(df):
     totale_celle = df.shape[0] * df.shape[1]
@@ -29,9 +44,100 @@ def analizza_completezza(df):
     return {"stato": stato, "pct_totale": pct_totale, "dettaglio": dettaglio}
 
 
-def analizza_errori(df):
-    dettaglio = []
+def valuta_duplicati_llm(df, descrizione, n_duplicati, pct_duplicati):
+    """
+    Chiede all'LLM se i duplicati trovati sono legittimi nel contesto del caso d'uso.
+    """
+    # Prendi un esempio di riga duplicata
+    duplicati_df = df[df.duplicated(keep=False)]
+    esempio = duplicati_df.head(2).to_dict(orient="records") if len(duplicati_df) > 0 else []
 
+    prompt = f"""Sei un esperto di qualità dei dati per sistemi AI ad alto rischio (AI Act, Art. 10).
+
+Nel dataset sono state trovate {n_duplicati} righe duplicate ({pct_duplicati}% del totale).
+
+CASO D'USO DEL DATASET: {descrizione}
+
+ESEMPIO DI RIGHE DUPLICATE:
+{json.dumps(esempio, indent=2, default=str)}
+
+Rispondi a questa domanda: nel contesto di questo caso d'uso, i duplicati sono un problema o possono essere legittimi?
+
+Rispondi in modo conciso (2-3 righe) spiegando se i duplicati vanno rimossi o se possono essere mantenuti e perché."""
+
+    try:
+        client = get_client()
+        response = client.chat.completions.create(
+            model="mistralai/mistral-large-2512",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            temperature=0.2
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Errore durante l'analisi LLM: {str(e)}"
+
+
+def controlla_formato_llm(df, descrizione):
+    """
+    Chiede all'LLM di controllare se i formati delle colonne sono coerenti.
+    """
+    # Prepara campione di ogni colonna
+    campioni = {}
+    for col in df.columns:
+        valori = df[col].dropna().unique()[:8]
+        campioni[col] = [str(v) for v in valori]
+
+    prompt = f"""Sei un esperto di qualità dei dati per sistemi AI.
+
+Controlla se i formati dei dati nelle seguenti colonne sono coerenti e corretti.
+
+CASO D'USO: {descrizione}
+
+CAMPIONI DI VALORI PER COLONNA:
+{json.dumps(campioni, indent=2)}
+
+Identifica eventuali problemi di formato come:
+- Date scritte in formati diversi
+- Numeri con formato inconsistente
+- Testo con maiuscole/minuscole miste
+- Valori che sembrano impossibili o fuori range
+- Codici o ID con formati diversi
+
+Rispondi SOLO in questo formato JSON:
+{{
+  "problemi": [
+    {{
+      "colonna": "nome_colonna",
+      "problema": "descrizione del problema",
+      "gravita": "ALTA|MEDIA|BASSA"
+    }}
+  ]
+}}
+
+Se non ci sono problemi di formato rispondi con lista vuota: {{"problemi": []}}"""
+
+    try:
+        client = get_client()
+        response = client.chat.completions.create(
+            model="mistralai/mistral-large-2512",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500,
+            temperature=0.1
+        )
+        testo = response.choices[0].message.content.strip()
+        testo = testo.replace("```json", "").replace("```", "").strip()
+        risultato = json.loads(testo)
+        return risultato.get("problemi", [])
+    except Exception as e:
+        return []
+
+
+def analizza_errori(df, descrizione=""):
+    dettaglio = []
+    commento_duplicati = None
+
+    # ── Duplicati ─────────────────────────────────────────────────────────────
     n_duplicati = df.duplicated().sum()
     pct_duplicati = round(n_duplicati / df.shape[0] * 100, 2)
     if n_duplicati > 0:
@@ -41,8 +147,15 @@ def analizza_errori(df):
             "Problema rilevato": f"{n_duplicati} righe duplicate ({pct_duplicati}%)",
             "Gravità": gravita
         })
+        # Chiedi all'LLM se i duplicati sono legittimi
+        if descrizione:
+            commento_duplicati = valuta_duplicati_llm(df, descrizione, n_duplicati, pct_duplicati)
 
+    # ── Outlier con IQR — esclude colonne binarie ─────────────────────────────
     for col in df.select_dtypes(include=["number"]).columns:
+        # Salta colonne binarie (solo 2 valori unici es. 0/1)
+        if df[col].nunique() <= 2:
+            continue
         Q1 = df[col].quantile(0.25)
         Q3 = df[col].quantile(0.75)
         IQR = Q3 - Q1
@@ -57,6 +170,20 @@ def analizza_errori(df):
                 "Gravità": gravita
             })
 
+    # ── Formato dati con LLM ──────────────────────────────────────────────────
+    problemi_formato = []
+    if descrizione:
+        problemi_formato = controlla_formato_llm(df, descrizione)
+        for p in problemi_formato:
+            dettaglio.append({
+                "Colonna": p.get("colonna", ""),
+                "Problema rilevato": f"Formato: {p.get('problema', '')}",
+                "Gravità": p.get("gravita", "MEDIA")
+            })
+
+    # ── Stato finale ──────────────────────────────────────────────────────────
+    has_outliers = any("outlier" in d.get("Problema rilevato", "") for d in dettaglio)
+
     if any(d["Gravità"] == "ALTA" for d in dettaglio):
         stato = "NON CONFORME"
     elif dettaglio:
@@ -64,7 +191,13 @@ def analizza_errori(df):
     else:
         stato = "CONFORME"
 
-    return {"stato": stato, "dettaglio": dettaglio}
+    return {
+        "stato": stato,
+        "dettaglio": dettaglio,
+        "commento_duplicati": commento_duplicati,
+        "n_duplicati": n_duplicati,
+        "has_outliers": has_outliers
+    }
 
 
 def analizza_governance(risposte):
