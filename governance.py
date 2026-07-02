@@ -111,6 +111,36 @@ def mostra_governance():
 
     st.divider()
 
+    # ── Conformità GDPR ──────────────────────────────────────────────────────
+    st.subheader("Conformità GDPR")
+    st.write("Domande relative al Regolamento Generale sulla Protezione dei Dati — Reg. UE 2016/679.")
+    st.info("💡 Queste informazioni sono necessarie per valutare la conformità del dataset anche rispetto al GDPR, che si applica insieme all'AI Act per i sistemi ad alto rischio.")
+
+    risposte["base_giuridica"] = st.selectbox(
+        "15. Il trattamento dei dati ha una base giuridica documentata? (Art. 6 GDPR)",
+        ["Seleziona...", "Consenso", "Contratto", "Obbligo legale",
+         "Interesse vitale", "Interesse pubblico", "Interesse legittimo",
+         "Non lo so", "Non applicabile"]
+    )
+
+    risposte["categorie_speciali"] = st.radio(
+        "16. Il dataset contiene categorie speciali di dati (Art. 9 GDPR)? Es. salute, etnia, religione, dati biometrici, orientamento sessuale.",
+        ["Sì", "No", "Non lo so"]
+    )
+
+    if risposte["categorie_speciali"] == "Sì":
+        risposte["consenso_esplicito"] = st.radio(
+            "17. È stato ottenuto il consenso esplicito per il trattamento di queste categorie speciali? (Art. 9 GDPR)",
+            ["Sì", "No", "Non lo so"]
+        )
+
+    risposte["informativa_ai"] = st.radio(
+        "18. Le persone sono state informate che i loro dati sarebbero stati usati per addestrare un sistema AI? (Art. 13 GDPR)",
+        ["Sì", "No", "Non lo so", "Non applicabile"]
+    )
+
+    st.divider()
+
     # ── Navigazione ──────────────────────────────────────────────────────────
     col1, col2 = st.columns(2)
 

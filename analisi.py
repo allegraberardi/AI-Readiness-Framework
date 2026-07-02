@@ -241,6 +241,21 @@ def analizza_governance(risposte):
     elif risposte.get("data_card") == "Non lo so":
         problemi.append({"Problema": "Data card — informazione non disponibile", "Dettaglio": "Non è noto se esiste una data card per questo dataset", "Gravità": "MEDIA"})
 
+    # ── Sezione GDPR ─────────────────────────────────────────────────────────
+    if risposte.get("base_giuridica") == "Non lo so":
+        problemi.append({"Problema": "Base giuridica GDPR non documentata", "Dettaglio": "Non è nota la base giuridica per il trattamento dei dati (Art. 6 GDPR)", "Gravità": "ALTA"})
+
+    if risposte.get("categorie_speciali") == "Sì":
+        if risposte.get("consenso_esplicito") == "No":
+            problemi.append({"Problema": "Consenso esplicito assente — categorie speciali", "Dettaglio": "Il dataset contiene categorie speciali (Art. 9 GDPR) ma non è stato ottenuto consenso esplicito", "Gravità": "ALTA"})
+        elif risposte.get("consenso_esplicito") == "Non lo so":
+            problemi.append({"Problema": "Consenso esplicito — informazione non disponibile", "Dettaglio": "Non è noto se il consenso esplicito per le categorie speciali è stato ottenuto (Art. 9 GDPR)", "Gravità": "MEDIA"})
+
+    if risposte.get("informativa_ai") == "No":
+        problemi.append({"Problema": "Informativa sull'uso AI assente", "Dettaglio": "Le persone non sono state informate che i dati sarebbero stati usati per addestrare un sistema AI (Art. 13 GDPR)", "Gravità": "ALTA"})
+    elif risposte.get("informativa_ai") == "Non lo so":
+        problemi.append({"Problema": "Informativa sull'uso AI — informazione non disponibile", "Dettaglio": "Non è noto se le persone sono state informate dell'uso AI dei loro dati (Art. 13 GDPR)", "Gravità": "MEDIA"})
+
     if any(p["Gravità"] == "ALTA" for p in problemi):
         stato = "NON CONFORME"
     elif problemi:
