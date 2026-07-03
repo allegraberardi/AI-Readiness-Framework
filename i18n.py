@@ -174,6 +174,40 @@ STRINGS = {
     "data_card_upload_help": {"en": "Optional — upload the file if available", "it": "Opzionale — carica il file se disponibile"},
     "data_card_uploaded_success": {"en": "✅ Data card uploaded!", "it": "✅ Data card caricata!"},
 
+    "section_gdpr": {"en": "GDPR compliance", "it": "Conformità GDPR"},
+    "gdpr_intro": {
+        "en": "Questions related to the General Data Protection Regulation — EU Regulation 2016/679.",
+        "it": "Domande relative al Regolamento Generale sulla Protezione dei Dati — Reg. UE 2016/679.",
+    },
+    "gdpr_info_hint": {
+        "en": "💡 This information is needed to assess the dataset's compliance also with GDPR, which applies alongside the AI Act for high-risk systems.",
+        "it": "💡 Queste informazioni sono necessarie per valutare la conformità del dataset anche rispetto al GDPR, che si applica insieme all'AI Act per i sistemi ad alto rischio.",
+    },
+    "q_legal_basis": {
+        "en": "15. Does the data processing have a documented legal basis? (Art. 6 GDPR)",
+        "it": "15. Il trattamento dei dati ha una base giuridica documentata? (Art. 6 GDPR)",
+    },
+    "legalbasis_consent": {"en": "Consent", "it": "Consenso"},
+    "legalbasis_contract": {"en": "Contract", "it": "Contratto"},
+    "legalbasis_legal_obligation": {"en": "Legal obligation", "it": "Obbligo legale"},
+    "legalbasis_vital_interest": {"en": "Vital interest", "it": "Interesse vitale"},
+    "legalbasis_public_interest": {"en": "Public interest", "it": "Interesse pubblico"},
+    "legalbasis_legitimate_interest": {"en": "Legitimate interest", "it": "Interesse legittimo"},
+    "legalbasis_unknown": {"en": "I don't know", "it": "Non lo so"},
+    "legalbasis_not_applicable": {"en": "Not applicable", "it": "Non applicabile"},
+    "q_special_categories": {
+        "en": "16. Does the dataset contain special categories of data (Art. 9 GDPR)? E.g. health, ethnicity, religion, biometric data, sexual orientation.",
+        "it": "16. Il dataset contiene categorie speciali di dati (Art. 9 GDPR)? Es. salute, etnia, religione, dati biometrici, orientamento sessuale.",
+    },
+    "q_explicit_consent": {
+        "en": "17. Was explicit consent obtained for processing these special categories? (Art. 9 GDPR)",
+        "it": "17. È stato ottenuto il consenso esplicito per il trattamento di queste categorie speciali? (Art. 9 GDPR)",
+    },
+    "q_ai_notice": {
+        "en": "18. Were people informed that their data would be used to train an AI system? (Art. 13 GDPR)",
+        "it": "18. Le persone sono state informate che i loro dati sarebbero stati usati per addestrare un sistema AI? (Art. 13 GDPR)",
+    },
+
     "back_button": {"en": "← Back", "it": "← Indietro"},
     "analyze_button": {"en": "Analyze dataset →", "it": "Analizza dataset →"},
 
@@ -276,6 +310,15 @@ STRINGS = {
 
     "governance_ok": {"en": "The dataset governance is adequate.", "it": "La governance del dataset è adeguata."},
     "governance_bad": {"en": "Document the missing information and update the dataset's data card.", "it": "Documentare le informazioni mancanti e aggiornare la data card del dataset."},
+
+    "outlier_boxplot_label": {"en": "**Outlier visualization — Boxplot:**", "it": "**Visualizzazione outlier — Boxplot:**"},
+    "outlier_boxplot_caption": {
+        "en": "The boxplots show the value distribution for each column with detected outliers. Points outside the whiskers are the anomalous values identified by the IQR method.",
+        "it": "Le boxplot mostrano la distribuzione dei valori per ogni colonna con outlier rilevati. I punti fuori dai baffi (whisker) sono i valori anomali identificati dal metodo IQR.",
+    },
+    "outlier_expander_label": {"en": "📊 {col} — Severity: {severity}", "it": "📊 {col} — Gravità: {severity}"},
+    "outlier_chart_title": {"en": "Distribution and outliers — {col}", "it": "Distribuzione e outlier — {col}"},
+    "install_plotly_warning": {"en": "Install plotly to view the boxplots: pip install plotly", "it": "Installa plotly per visualizzare le boxplot: pip install plotly"},
 
     "back_to_start_button": {"en": "← Back to start", "it": "← Torna all'inizio"},
     "download_report_button": {"en": "📄 Download PDF Report", "it": "📄 Scarica Report PDF"},
@@ -436,6 +479,16 @@ STRINGS = {
     "gov_data_card_missing_detail": {"en": "There is no data card or datasheet for this dataset", "it": "Non esiste una data card o datasheet per questo dataset"},
     "gov_data_card_unknown": {"en": "Data card — information not available", "it": "Data card — informazione non disponibile"},
     "gov_data_card_unknown_detail": {"en": "It is not known whether a data card exists for this dataset", "it": "Non è noto se esiste una data card per questo dataset"},
+    "gov_legal_basis_unknown": {"en": "GDPR legal basis not documented", "it": "Base giuridica GDPR non documentata"},
+    "gov_legal_basis_unknown_detail": {"en": "It is not known what the legal basis for the data processing is (Art. 6 GDPR)", "it": "Non è nota la base giuridica per il trattamento dei dati (Art. 6 GDPR)"},
+    "gov_explicit_consent_missing": {"en": "Explicit consent missing — special categories", "it": "Consenso esplicito assente — categorie speciali"},
+    "gov_explicit_consent_missing_detail": {"en": "The dataset contains special categories (Art. 9 GDPR) but explicit consent was not obtained", "it": "Il dataset contiene categorie speciali (Art. 9 GDPR) ma non è stato ottenuto consenso esplicito"},
+    "gov_explicit_consent_unknown": {"en": "Explicit consent — information not available", "it": "Consenso esplicito — informazione non disponibile"},
+    "gov_explicit_consent_unknown_detail": {"en": "It is not known whether explicit consent for the special categories was obtained (Art. 9 GDPR)", "it": "Non è noto se il consenso esplicito per le categorie speciali è stato ottenuto (Art. 9 GDPR)"},
+    "gov_ai_notice_missing": {"en": "AI usage notice missing", "it": "Informativa sull'uso AI assente"},
+    "gov_ai_notice_missing_detail": {"en": "People were not informed that their data would be used to train an AI system (Art. 13 GDPR)", "it": "Le persone non sono state informate che i dati sarebbero stati usati per addestrare un sistema AI (Art. 13 GDPR)"},
+    "gov_ai_notice_unknown": {"en": "AI usage notice — information not available", "it": "Informativa sull'uso AI — informazione non disponibile"},
+    "gov_ai_notice_unknown_detail": {"en": "It is not known whether people were informed of the AI use of their data (Art. 13 GDPR)", "it": "Non è noto se le persone sono state informate dell'uso AI dei loro dati (Art. 13 GDPR)"},
 
     # rilevanza.py
     "col_description": {"en": "Description", "it": "Descrizione"},

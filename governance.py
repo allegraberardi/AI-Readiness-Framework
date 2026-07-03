@@ -19,6 +19,11 @@ def _answer_label(code):
 ORIGIN_OPTIONS = ["__select__", "internal", "external_vendor", "open_source", "web_scraping", "unknown", "other"]
 METHOD_OPTIONS = ["__select__", "surveys", "sensors", "system_logs", "manual_entry", "automated_process", "unknown", "other"]
 LABELER_OPTIONS = ["__select__", "domain_experts", "crowdsourcing", "automatic_process", "combination", "unknown", "other"]
+LEGAL_BASIS_OPTIONS = [
+    "__select__", "consent", "contract", "legal_obligation",
+    "vital_interest", "public_interest", "legitimate_interest",
+    "unknown", "not_applicable",
+]
 
 
 def _select_label(prefix, code):
@@ -147,62 +152,34 @@ def mostra_governance():
 
     st.divider()
 
-    # ── Conformità GDPR ──────────────────────────────────────────────────────
-    st.subheader("Conformità GDPR")
-    st.write("Domande relative al Regolamento Generale sulla Protezione dei Dati — Reg. UE 2016/679.")
-    st.info("💡 Queste informazioni sono necessarie per valutare la conformità del dataset anche rispetto al GDPR, che si applica insieme all'AI Act per i sistemi ad alto rischio.")
+    # ── GDPR compliance ───────────────────────────────────────────────────────
+    st.subheader(t("section_gdpr"))
+    st.write(t("gdpr_intro"))
+    st.info(t("gdpr_info_hint"))
 
     risposte["base_giuridica"] = st.selectbox(
-        "15. Il trattamento dei dati ha una base giuridica documentata? (Art. 6 GDPR)",
-        ["Seleziona...", "Consenso", "Contratto", "Obbligo legale",
-         "Interesse vitale", "Interesse pubblico", "Interesse legittimo",
-         "Non lo so", "Non applicabile"]
+        t("q_legal_basis"),
+        LEGAL_BASIS_OPTIONS,
+        format_func=lambda c: _select_label("legalbasis", c)
     )
 
     risposte["categorie_speciali"] = st.radio(
-        "16. Il dataset contiene categorie speciali di dati (Art. 9 GDPR)? Es. salute, etnia, religione, dati biometrici, orientamento sessuale.",
-        ["Sì", "No", "Non lo so"]
+        t("q_special_categories"),
+        YES_NO_UNKNOWN,
+        format_func=_answer_label
     )
 
-    if risposte["categorie_speciali"] == "Sì":
+    if risposte["categorie_speciali"] == "yes":
         risposte["consenso_esplicito"] = st.radio(
-            "17. È stato ottenuto il consenso esplicito per il trattamento di queste categorie speciali? (Art. 9 GDPR)",
-            ["Sì", "No", "Non lo so"]
+            t("q_explicit_consent"),
+            YES_NO_UNKNOWN,
+            format_func=_answer_label
         )
 
     risposte["informativa_ai"] = st.radio(
-        "18. Le persone sono state informate che i loro dati sarebbero stati usati per addestrare un sistema AI? (Art. 13 GDPR)",
-        ["Sì", "No", "Non lo so", "Non applicabile"]
-    )
-
-    st.divider()
-
-    # ── Conformità GDPR ──────────────────────────────────────────────────────
-    st.subheader("Conformità GDPR")
-    st.write("Domande relative al Regolamento Generale sulla Protezione dei Dati — Reg. UE 2016/679.")
-    st.info("💡 Queste informazioni sono necessarie per valutare la conformità del dataset anche rispetto al GDPR, che si applica insieme all'AI Act per i sistemi ad alto rischio.")
-
-    risposte["base_giuridica"] = st.selectbox(
-        "15. Il trattamento dei dati ha una base giuridica documentata? (Art. 6 GDPR)",
-        ["Seleziona...", "Consenso", "Contratto", "Obbligo legale",
-         "Interesse vitale", "Interesse pubblico", "Interesse legittimo",
-         "Non lo so", "Non applicabile"]
-    )
-
-    risposte["categorie_speciali"] = st.radio(
-        "16. Il dataset contiene categorie speciali di dati (Art. 9 GDPR)? Es. salute, etnia, religione, dati biometrici, orientamento sessuale.",
-        ["Sì", "No", "Non lo so"]
-    )
-
-    if risposte["categorie_speciali"] == "Sì":
-        risposte["consenso_esplicito"] = st.radio(
-            "17. È stato ottenuto il consenso esplicito per il trattamento di queste categorie speciali? (Art. 9 GDPR)",
-            ["Sì", "No", "Non lo so"]
-        )
-
-    risposte["informativa_ai"] = st.radio(
-        "18. Le persone sono state informate che i loro dati sarebbero stati usati per addestrare un sistema AI? (Art. 13 GDPR)",
-        ["Sì", "No", "Non lo so", "Non applicabile"]
+        t("q_ai_notice"),
+        YES_NO_UNKNOWN_NA,
+        format_func=_answer_label
     )
 
     st.divider()

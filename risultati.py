@@ -205,25 +205,28 @@ def mostra_risultati():
         commento_extra=res_errori.get("commento_duplicati")
     )
 
-    # Boxplot per colonne numeriche con outlier
+    # Boxplot for numeric columns with outliers
+    colonna_key = t("col_column")
+    problema_key = t("col_problem_detected")
+    gravita_key = t("col_severity")
     colonne_outlier = [
-        d["Colonna"] for d in res_errori.get("dettaglio", [])
-        if "outlier" in d.get("Problema rilevato", "") and d["Colonna"] != "Intero dataset"
+        d[colonna_key] for d in res_errori.get("dettaglio", [])
+        if "outlier" in d.get(problema_key, "") and d[colonna_key] != t("whole_dataset")
     ]
     if colonne_outlier:
         try:
             import plotly.express as px
-            st.write("**Visualizzazione outlier — Boxplot:**")
-            st.caption("Le boxplot mostrano la distribuzione dei valori per ogni colonna con outlier rilevati. I punti fuori dai baffi (whisker) sono i valori anomali identificati dal metodo IQR.")
+            st.write(t("outlier_boxplot_label"))
+            st.caption(t("outlier_boxplot_caption"))
             for col in colonne_outlier:
                 if col in df.columns:
                     gravita = next(
-                        (d["Gravità"] for d in res_errori.get("dettaglio", [])
-                         if d["Colonna"] == col), "")
-                    with st.expander(f"📊 {col} — Gravità: {gravita}"):
+                        (d[gravita_key] for d in res_errori.get("dettaglio", [])
+                         if d[colonna_key] == col), "")
+                    with st.expander(t("outlier_expander_label", col=col, severity=gravita)):
                         fig = px.box(
                             df, y=col,
-                            title=f"Distribuzione e outlier — {col}",
+                            title=t("outlier_chart_title", col=col),
                             points="outliers",
                             color_discrete_sequence=["#2563EB"]
                         )
@@ -235,7 +238,7 @@ def mostra_risultati():
                         )
                         st.plotly_chart(fig, use_container_width=True)
         except ImportError:
-            st.warning("Installa plotly per visualizzare le boxplot: pip install plotly")
+            st.warning(t("install_plotly_warning"))
 
     # Messaggio se nessun duplicato
     if n_dup == 0 and res_errori["stato"] != "CONFORME":
