@@ -205,6 +205,43 @@ def mostra_risultati():
         commento_extra=res_errori.get("commento_duplicati")
     )
 
+    # Boxplot per colonne numeriche con outlier
+    colonne_outlier = [
+        d["Colonna"] for d in res_errori.get("dettaglio", [])
+        if "outlier" in d.get("Problema rilevato", "") and d["Colonna"] != "Intero dataset"
+    ]
+    if colonne_outlier:
+        try:
+            import plotly.express as px
+            st.write("**Visualizzazione outlier — Boxplot:**")
+            st.caption("Le boxplot mostrano la distribuzione dei valori per ogni colonna con outlier rilevati. I punti fuori dai baffi (whisker) sono i valori anomali identificati dal metodo IQR.")
+            for col in colonne_outlier:
+                if col in df.columns:
+                    gravita = next(
+                        (d["Gravità"] for d in res_errori.get("dettaglio", [])
+                         if d["Colonna"] == col), "")
+                    with st.expander(f"📊 {col} — Gravità: {gravita}"):
+                        fig = px.box(
+                            df, y=col,
+                            title=f"Distribuzione e outlier — {col}",
+                            points="outliers",
+                            color_discrete_sequence=["#2563EB"]
+                        )
+                        fig.update_layout(
+                            height=350,
+                            showlegend=False,
+                            yaxis_title=col,
+                            xaxis_title=""
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+        except ImportError:
+            st.warning("Installa plotly per visualizzare le boxplot: pip install plotly")
+
+    # Messaggio se nessun duplicato
+    if n_dup == 0 and res_errori["stato"] != "CONFORME":
+        pass  # già gestito dalla raccomandazione
+
+    # Assenza di bias con commento LLM
     # Absence of bias with LLM comment
     with st.container():
         stato_bias = res_bias["stato"]
