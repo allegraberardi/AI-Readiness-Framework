@@ -1,19 +1,12 @@
 import pandas as pd
 from rappresentativita import analizza_rappresentativita
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
 import json
-
-load_dotenv()
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-
-def get_client():
-    return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=OPENROUTER_API_KEY,
-    )
+from i18n import (
+    t, t_level, lang_name,
+    STATUS_COMPLIANT, STATUS_ATTENTION, STATUS_NON_COMPLIANT,
+    LEVEL_HIGH, LEVEL_MEDIUM, LEVEL_LOW,
+)
+from llm_settings import get_client, get_model
 
 
 def analizza_completezza(df):
@@ -26,101 +19,101 @@ def analizza_completezza(df):
         n_mancanti = df[col].isnull().sum()
         pct = round(n_mancanti / df.shape[0] * 100, 2)
         if n_mancanti > 0:
-            gravita = "ALTA" if pct > 15 else "MEDIA" if pct > 5 else "BASSA"
+            gravita = LEVEL_HIGH if pct > 15 else LEVEL_MEDIUM if pct > 5 else LEVEL_LOW
             dettaglio.append({
-                "Colonna": col,
-                "Valori mancanti": n_mancanti,
+                t("col_column"): col,
+                t("col_missing_values"): n_mancanti,
                 "%": f"{pct}%",
-                "Gravità": gravita
+                t("col_severity"): t_level(gravita)
             })
 
     if pct_totale < 5:
-        stato = "CONFORME"
+        stato = STATUS_COMPLIANT
     elif pct_totale < 15:
-        stato = "ATTENZIONE"
+        stato = STATUS_ATTENTION
     else:
-        stato = "NON CONFORME"
+        stato = STATUS_NON_COMPLIANT
 
     return {"stato": stato, "pct_totale": pct_totale, "dettaglio": dettaglio}
 
 
 def valuta_duplicati_llm(df, descrizione, n_duplicati, pct_duplicati):
     """
-    Chiede all'LLM se i duplicati trovati sono legittimi nel contesto del caso d'uso.
+    Asks the LLM whether the duplicates found are legitimate in the context of the use case.
     """
-    # Prendi un esempio di riga duplicata
     duplicati_df = df[df.duplicated(keep=False)]
     esempio = duplicati_df.head(2).to_dict(orient="records") if len(duplicati_df) > 0 else []
 
-    prompt = f"""Sei un esperto di qualità dei dati per sistemi AI ad alto rischio (AI Act, Art. 10).
+    prompt = f"""You are a data quality expert for high-risk AI systems (AI Act, Art. 10).
 
-Nel dataset sono state trovate {n_duplicati} righe duplicate ({pct_duplicati}% del totale).
+{n_duplicati} duplicate rows were found in the dataset ({pct_duplicati}% of the total).
 
-CASO D'USO DEL DATASET: {descrizione}
+DATASET USE CASE: {descrizione}
 
-ESEMPIO DI RIGHE DUPLICATE:
+EXAMPLE OF DUPLICATE ROWS:
 {json.dumps(esempio, indent=2, default=str)}
 
-Rispondi a questa domanda: nel contesto di questo caso d'uso, i duplicati sono un problema o possono essere legittimi?
+Answer this question: in the context of this use case, are the duplicates a problem, or could they be legitimate?
 
-Rispondi in modo conciso (2-3 righe) spiegando se i duplicati vanno rimossi o se possono essere mantenuti e perché."""
+Reply concisely (2-3 lines) explaining whether the duplicates should be removed or can be kept, and why. Reply in {lang_name()}."""
 
     try:
         client = get_client()
         response = client.chat.completions.create(
-            model="mistralai/mistral-large-2512",
+            model=get_model(),
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
             temperature=0.2
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"Errore durante l'analisi LLM: {str(e)}"
+        return t("llm_generic_error", error=str(e))
 
 
 def controlla_formato_llm(df, descrizione):
     """
-    Chiede all'LLM di controllare se i formati delle colonne sono coerenti.
+    Asks the LLM to check whether the column formats are consistent.
     """
-    # Prepara campione di ogni colonna
     campioni = {}
     for col in df.columns:
         valori = df[col].dropna().unique()[:8]
         campioni[col] = [str(v) for v in valori]
 
-    prompt = f"""Sei un esperto di qualità dei dati per sistemi AI.
+    prompt = f"""You are a data quality expert for AI systems.
 
-Controlla se i formati dei dati nelle seguenti colonne sono coerenti e corretti.
+Check whether the data formats in the following columns are consistent and correct.
 
-CASO D'USO: {descrizione}
+USE CASE: {descrizione}
 
-CAMPIONI DI VALORI PER COLONNA:
+SAMPLE VALUES PER COLUMN:
 {json.dumps(campioni, indent=2)}
 
-Identifica eventuali problemi di formato come:
-- Date scritte in formati diversi
-- Numeri con formato inconsistente
-- Testo con maiuscole/minuscole miste
-- Valori che sembrano impossibili o fuori range
-- Codici o ID con formati diversi
+Identify any format issues such as:
+- Dates written in different formats
+- Numbers with inconsistent formatting
+- Text with mixed uppercase/lowercase
+- Values that seem impossible or out of range
+- Codes or IDs with different formats
 
-Rispondi SOLO in questo formato JSON:
+Reply ONLY in this JSON format:
 {{
   "problemi": [
     {{
-      "colonna": "nome_colonna",
-      "problema": "descrizione del problema",
-      "gravita": "ALTA|MEDIA|BASSA"
+      "colonna": "column_name",
+      "problema": "description of the problem",
+      "gravita": "HIGH|MEDIUM|LOW"
     }}
   ]
 }}
 
-Se non ci sono problemi di formato rispondi con lista vuota: {{"problemi": []}}"""
+Write the "problema" text in {lang_name()}.
+
+If there are no format issues, reply with an empty list: {{"problemi": []}}"""
 
     try:
         client = get_client()
         response = client.chat.completions.create(
-            model="mistralai/mistral-large-2512",
+            model=get_model(),
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500,
             temperature=0.1
@@ -129,31 +122,41 @@ Se non ci sono problemi di formato rispondi con lista vuota: {{"problemi": []}}"
         testo = testo.replace("```json", "").replace("```", "").strip()
         risultato = json.loads(testo)
         return risultato.get("problemi", [])
-    except Exception as e:
+    except Exception:
         return []
+
+
+_SEVERITY_CODE_MAP = {"high": LEVEL_HIGH, "medium": LEVEL_MEDIUM, "low": LEVEL_LOW,
+                       "alta": LEVEL_HIGH, "media": LEVEL_MEDIUM, "bassa": LEVEL_LOW}
+
+
+def _normalizza_gravita(valore):
+    return _SEVERITY_CODE_MAP.get(str(valore).strip().lower(), LEVEL_MEDIUM)
 
 
 def analizza_errori(df, descrizione=""):
     dettaglio = []
+    severita_rilevate = []
     commento_duplicati = None
+    has_outliers = False
 
-    # ── Duplicati ─────────────────────────────────────────────────────────────
+    # ── Duplicates ────────────────────────────────────────────────────────────
     n_duplicati = df.duplicated().sum()
     pct_duplicati = round(n_duplicati / df.shape[0] * 100, 2)
     if n_duplicati > 0:
-        gravita = "ALTA" if pct_duplicati > 10 else "MEDIA" if pct_duplicati > 5 else "BASSA"
+        gravita = LEVEL_HIGH if pct_duplicati > 10 else LEVEL_MEDIUM if pct_duplicati > 5 else LEVEL_LOW
+        severita_rilevate.append(gravita)
         dettaglio.append({
-            "Colonna": "Intero dataset",
-            "Problema rilevato": f"{n_duplicati} righe duplicate ({pct_duplicati}%)",
-            "Gravità": gravita
+            t("col_column"): t("whole_dataset"),
+            t("col_problem_detected"): t("duplicates_detected", n=n_duplicati, pct=pct_duplicati),
+            t("col_severity"): t_level(gravita)
         })
-        # Chiedi all'LLM se i duplicati sono legittimi
         if descrizione:
             commento_duplicati = valuta_duplicati_llm(df, descrizione, n_duplicati, pct_duplicati)
 
-    # ── Outlier con IQR — esclude colonne binarie ─────────────────────────────
+    # ── Outliers via IQR — excludes binary columns ───────────────────────────
     for col in df.select_dtypes(include=["number"]).columns:
-        # Salta colonne binarie (solo 2 valori unici es. 0/1)
+        # Skip binary columns (only 2 unique values, e.g. 0/1)
         if df[col].nunique() <= 2:
             continue
         Q1 = df[col].quantile(0.25)
@@ -163,33 +166,34 @@ def analizza_errori(df, descrizione=""):
         n_outlier = len(outliers)
         if n_outlier > 0:
             pct_out = round(n_outlier / df.shape[0] * 100, 2)
-            gravita = "ALTA" if pct_out > 5 else "MEDIA" if pct_out > 1 else "BASSA"
+            gravita = LEVEL_HIGH if pct_out > 5 else LEVEL_MEDIUM if pct_out > 1 else LEVEL_LOW
+            severita_rilevate.append(gravita)
+            has_outliers = True
             dettaglio.append({
-                "Colonna": col,
-                "Problema rilevato": f"{n_outlier} outlier rilevati con IQR ({pct_out}%)",
-                "Gravità": gravita
+                t("col_column"): col,
+                t("col_problem_detected"): t("outliers_detected", n=n_outlier, pct=pct_out),
+                t("col_severity"): t_level(gravita)
             })
 
-    # ── Formato dati con LLM ──────────────────────────────────────────────────
-    problemi_formato = []
+    # ── Data format check with LLM ────────────────────────────────────────────
     if descrizione:
         problemi_formato = controlla_formato_llm(df, descrizione)
         for p in problemi_formato:
+            gravita = _normalizza_gravita(p.get("gravita", "medium"))
+            severita_rilevate.append(gravita)
             dettaglio.append({
-                "Colonna": p.get("colonna", ""),
-                "Problema rilevato": f"Formato: {p.get('problema', '')}",
-                "Gravità": p.get("gravita", "MEDIA")
+                t("col_column"): p.get("colonna", ""),
+                t("col_problem_detected"): t("format_problem_prefix", text=p.get("problema", "")),
+                t("col_severity"): t_level(gravita)
             })
 
-    # ── Stato finale ──────────────────────────────────────────────────────────
-    has_outliers = any("outlier" in d.get("Problema rilevato", "") for d in dettaglio)
-
-    if any(d["Gravità"] == "ALTA" for d in dettaglio):
-        stato = "NON CONFORME"
+    # ── Final status ──────────────────────────────────────────────────────────
+    if LEVEL_HIGH in severita_rilevate:
+        stato = STATUS_NON_COMPLIANT
     elif dettaglio:
-        stato = "ATTENZIONE"
+        stato = STATUS_ATTENTION
     else:
-        stato = "CONFORME"
+        stato = STATUS_COMPLIANT
 
     return {
         "stato": stato,
@@ -202,51 +206,52 @@ def analizza_errori(df, descrizione=""):
 
 def analizza_governance(risposte):
     """
-    Calcola lo score di governance dalle risposte del questionario.
-    - "No" → problema ALTA gravità (NON CONFORME)
-    - "Non lo so" → problema MEDIA gravità (ATTENZIONE)
-    - "Sì" → nessun problema
+    Computes the governance score from the questionnaire answers.
+    - "no" → high-severity problem (NON-COMPLIANT)
+    - "unknown" → medium-severity problem (ATTENTION)
+    - "yes" → no problem
     """
     problemi = []
 
-    # Documentazione raccolta
-    if risposte.get("doc_raccolta") == "No":
-        problemi.append({"Problema": "Documentazione raccolta assente", "Dettaglio": "Non esiste documentazione sul processo di raccolta dei dati", "Gravità": "ALTA"})
-    elif risposte.get("doc_raccolta") == "Non lo so":
-        problemi.append({"Problema": "Documentazione raccolta — informazione non disponibile", "Dettaglio": "Non è noto se esiste documentazione sul processo di raccolta", "Gravità": "MEDIA"})
+    # Collection documentation
+    if risposte.get("doc_raccolta") == "no":
+        problemi.append({t("col_problem"): t("gov_doc_collection_missing"), t("col_detail"): t("gov_doc_collection_missing_detail"), t("col_severity"): t_level(LEVEL_HIGH)})
+    elif risposte.get("doc_raccolta") == "unknown":
+        problemi.append({t("col_problem"): t("gov_doc_collection_unknown"), t("col_detail"): t("gov_doc_collection_unknown_detail"), t("col_severity"): t_level(LEVEL_MEDIUM)})
 
-    # Consenso
-    if risposte.get("consenso") == "No":
-        problemi.append({"Problema": "Consenso assente", "Dettaglio": "Nessuna documentazione del consenso per i soggetti del dataset", "Gravità": "ALTA"})
-    elif risposte.get("consenso") == "Non lo so":
-        problemi.append({"Problema": "Consenso — informazione non disponibile", "Dettaglio": "Non è noto se il consenso è stato ottenuto", "Gravità": "MEDIA"})
+    # Consent
+    if risposte.get("consenso") == "no":
+        problemi.append({t("col_problem"): t("gov_consent_missing"), t("col_detail"): t("gov_consent_missing_detail"), t("col_severity"): t_level(LEVEL_HIGH)})
+    elif risposte.get("consenso") == "unknown":
+        problemi.append({t("col_problem"): t("gov_consent_unknown"), t("col_detail"): t("gov_consent_unknown_detail"), t("col_severity"): t_level(LEVEL_MEDIUM)})
 
-    # Etichettatura
-    if risposte.get("etichettati") == "Sì":
-        if risposte.get("doc_etichettatura") == "No":
-            problemi.append({"Problema": "Criteri etichettatura non documentati", "Dettaglio": "I dati sono etichettati ma non esistono criteri documentati", "Gravità": "ALTA"})
-        elif risposte.get("doc_etichettatura") == "Non lo so":
-            problemi.append({"Problema": "Criteri etichettatura — informazione non disponibile", "Dettaglio": "Non è noto se esistono criteri documentati per l'etichettatura", "Gravità": "MEDIA"})
+    # Labeling
+    if risposte.get("etichettati") == "yes":
+        if risposte.get("doc_etichettatura") == "no":
+            problemi.append({t("col_problem"): t("gov_labeling_criteria_missing"), t("col_detail"): t("gov_labeling_criteria_missing_detail"), t("col_severity"): t_level(LEVEL_HIGH)})
+        elif risposte.get("doc_etichettatura") == "unknown":
+            problemi.append({t("col_problem"): t("gov_labeling_criteria_unknown"), t("col_detail"): t("gov_labeling_criteria_unknown_detail"), t("col_severity"): t_level(LEVEL_MEDIUM)})
 
-    # Pulizia
-    if risposte.get("pulizia") == "Sì":
-        if risposte.get("doc_pulizia") == "No":
-            problemi.append({"Problema": "Pulizia non documentata", "Dettaglio": "Il dataset è stato pulito ma le operazioni non sono documentate", "Gravità": "ALTA"})
-        elif risposte.get("doc_pulizia") == "Non lo so":
-            problemi.append({"Problema": "Pulizia — informazione non disponibile", "Dettaglio": "Non è noto se le operazioni di pulizia sono state documentate", "Gravità": "MEDIA"})
+    # Cleaning
+    if risposte.get("pulizia") == "yes":
+        if risposte.get("doc_pulizia") == "no":
+            problemi.append({t("col_problem"): t("gov_cleaning_undocumented"), t("col_detail"): t("gov_cleaning_undocumented_detail"), t("col_severity"): t_level(LEVEL_HIGH)})
+        elif risposte.get("doc_pulizia") == "unknown":
+            problemi.append({t("col_problem"): t("gov_cleaning_unknown"), t("col_detail"): t("gov_cleaning_unknown_detail"), t("col_severity"): t_level(LEVEL_MEDIUM)})
 
     # Data card
-    if risposte.get("data_card") == "No":
-        problemi.append({"Problema": "Data card assente", "Dettaglio": "Non esiste una data card o datasheet per questo dataset", "Gravità": "ALTA"})
-    elif risposte.get("data_card") == "Non lo so":
-        problemi.append({"Problema": "Data card — informazione non disponibile", "Dettaglio": "Non è noto se esiste una data card per questo dataset", "Gravità": "MEDIA"})
+    if risposte.get("data_card") == "no":
+        problemi.append({t("col_problem"): t("gov_data_card_missing"), t("col_detail"): t("gov_data_card_missing_detail"), t("col_severity"): t_level(LEVEL_HIGH)})
+    elif risposte.get("data_card") == "unknown":
+        problemi.append({t("col_problem"): t("gov_data_card_unknown"), t("col_detail"): t("gov_data_card_unknown_detail"), t("col_severity"): t_level(LEVEL_MEDIUM)})
 
-    if any(p["Gravità"] == "ALTA" for p in problemi):
-        stato = "NON CONFORME"
+    gravita_alta_label = t_level(LEVEL_HIGH)
+    if any(p[t("col_severity")] == gravita_alta_label for p in problemi):
+        stato = STATUS_NON_COMPLIANT
     elif problemi:
-        stato = "ATTENZIONE"
+        stato = STATUS_ATTENTION
     else:
-        stato = "CONFORME"
+        stato = STATUS_COMPLIANT
 
     return {"stato": stato, "dettaglio": problemi}
 
@@ -262,9 +267,9 @@ def calcola_score_aggregato(risultati):
     }
 
     punteggi = {
-        "CONFORME":     1.0,
-        "ATTENZIONE":   0.5,
-        "NON CONFORME": 0.0
+        STATUS_COMPLIANT:     1.0,
+        STATUS_ATTENTION:     0.5,
+        STATUS_NON_COMPLIANT: 0.0
     }
 
     score = 0

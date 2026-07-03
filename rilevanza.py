@@ -1,97 +1,91 @@
 import pandas as pd
 import json
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-
-def get_client():
-    return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=OPENROUTER_API_KEY,
-    )
+from i18n import (
+    t, t_level, lang_name, sector_label_en,
+    STATUS_COMPLIANT, STATUS_ATTENTION, STATUS_NON_COMPLIANT,
+    LEVEL_HIGH, LEVEL_MEDIUM, LEVEL_LOW,
+)
+from llm_settings import get_client, get_model
 
 
 def pulisci_testo(testo):
-    """Rimuove caratteri speciali che potrebbero rompere il JSON."""
+    """Removes special characters that could break the JSON."""
     return str(testo).replace('"', "'").replace('\\', '').replace('\n', ' ').strip()
 
 
 def descrivi_colonna(df, col):
     """
-    Genera una descrizione automatica di una colonna basata
-    sul tipo di dato e i valori presenti.
+    Generates an automatic description of a column based on
+    its data type and the values present.
     """
     dtype = df[col].dtype
     n_unici = df[col].nunique()
-    n_nulli = df[col].isnull().sum()
 
     if dtype == "object":
         valori = df[col].dropna().unique()[:5]
         valori_puliti = [pulisci_testo(v) for v in valori]
-        return f"Categorica — {n_unici} valori unici, es: {', '.join(valori_puliti)}"
+        return t("desc_categorical", n=n_unici, examples=", ".join(valori_puliti))
     elif dtype in ["int64", "float64"]:
         min_val = round(df[col].min(), 2)
         max_val = round(df[col].max(), 2)
         media = round(df[col].mean(), 2)
-        return f"Numerica — min: {min_val}, max: {max_val}, media: {media}"
+        return t("desc_numeric", min=min_val, max=max_val, mean=media)
     else:
-        return f"Tipo: {dtype} — {n_unici} valori unici"
+        return t("desc_type", dtype=dtype, n=n_unici)
 
 
 def calcola_rilevanza(df, descrizione, settore):
     """
-    Usa l'LLM per valutare la rilevanza di ogni colonna del dataset
-    rispetto alla descrizione del caso d'uso e al settore.
+    Uses the LLM to assess the relevance of each dataset column
+    with respect to the use case description and sector.
     """
     if not descrizione or not descrizione.strip():
         return {
-            "stato": "ATTENZIONE",
-            "messaggio": "Nessuna descrizione del caso d'uso fornita. Impossibile valutare la rilevanza.",
+            "stato": STATUS_ATTENTION,
+            "messaggio": t("no_description_provided"),
             "dettaglio": [],
             "score_medio": 0
         }
 
-    # Prepara descrizione delle colonne
     colonne_info = {}
     for col in df.columns:
         colonne_info[col] = descrivi_colonna(df, col)
 
     colonne_testo = "\n".join([f"- {col}: {desc}" for col, desc in colonne_info.items()])
+    settore_en = sector_label_en(settore)
 
-    prompt = f"""Sei un esperto di AI e del Regolamento Europeo sull'Intelligenza Artificiale (AI Act).
+    prompt = f"""You are an expert in AI and the EU Artificial Intelligence Act (AI Act).
 
-Devi valutare la rilevanza di ogni colonna di un dataset rispetto al caso d'uso descritto dall'utente.
+You must assess the relevance of each dataset column with respect to the use case described by the user.
 
-CASO D'USO: {descrizione}
-SETTORE AI ACT (Allegato III): {settore}
+USE CASE: {descrizione}
+AI ACT SECTOR (Annex III): {settore_en}
 
-COLONNE DEL DATASET:
+DATASET COLUMNS:
 {colonne_testo}
 
-Per ogni colonna assegna:
-- uno score da 0 a 100 che indica quanto è rilevante per il caso d'uso (0 = completamente irrilevante, 100 = fondamentale)
-- una breve spiegazione del perché
+For each column assign:
+- a score from 0 to 100 indicating how relevant it is to the use case (0 = completely irrelevant, 100 = essential)
+- a brief explanation of why
 
-Rispondi SOLO in questo formato JSON, senza testo aggiuntivo:
+Reply ONLY in this JSON format, with no extra text:
 {{
   "valutazioni": [
     {{
-      "colonna": "nome_colonna",
+      "colonna": "column_name",
       "score": 85,
-      "spiegazione": "Spiegazione breve del perché è rilevante o no"
+      "spiegazione": "Brief explanation of why it is or isn't relevant"
     }}
   ],
-  "commento_generale": "Valutazione complessiva della rilevanza del dataset per il caso d'uso"
-}}"""
+  "commento_generale": "Overall assessment of the dataset's relevance to the use case"
+}}
+
+Write the "spiegazione" and "commento_generale" text in {lang_name()}."""
 
     try:
         client = get_client()
         response = client.chat.completions.create(
-            model="mistralai/mistral-large-2512",
+            model=get_model(),
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1500,
             temperature=0.1
@@ -101,7 +95,6 @@ Rispondi SOLO in questo formato JSON, senza testo aggiuntivo:
         testo = testo.replace("```json", "").replace("```", "").strip()
         risultato_llm = json.loads(testo)
 
-        # Costruisci dettaglio per ogni colonna
         dettaglio = []
         scores = []
 
@@ -110,26 +103,25 @@ Rispondi SOLO in questo formato JSON, senza testo aggiuntivo:
             scores.append(score)
 
             if score >= 60:
-                rilevanza = "ALTA"
-                gravita = "BASSA"
+                rilevanza_level = LEVEL_HIGH
+                gravita = LEVEL_LOW
             elif score >= 30:
-                rilevanza = "MEDIA"
-                gravita = "MEDIA"
+                rilevanza_level = LEVEL_MEDIUM
+                gravita = LEVEL_MEDIUM
             else:
-                rilevanza = "BASSA"
-                gravita = "ALTA"
+                rilevanza_level = LEVEL_LOW
+                gravita = LEVEL_HIGH
 
             dettaglio.append({
-                "Colonna": val.get("colonna", ""),
-                "Descrizione": colonne_info.get(val.get("colonna", ""), ""),
-                "Score rilevanza": f"{score}/100",
-                "Rilevanza": rilevanza,
-                "Spiegazione LLM": val.get("spiegazione", ""),
-                "Gravità": gravita
+                t("col_column"): val.get("colonna", ""),
+                t("col_description"): colonne_info.get(val.get("colonna", ""), ""),
+                t("col_relevance_score"): f"{score}/100",
+                t("col_relevance"): t_level(rilevanza_level),
+                t("col_llm_explanation"): val.get("spiegazione", ""),
+                t("col_severity"): t_level(gravita)
             })
 
-        # Ordina per score decrescente
-        dettaglio = sorted(dettaglio, key=lambda x: int(x["Score rilevanza"].split("/")[0]), reverse=True)
+        dettaglio = sorted(dettaglio, key=lambda x: int(x[t("col_relevance_score")].split("/")[0]), reverse=True)
 
         score_medio = round(sum(scores) / len(scores), 1) if scores else 0
         n_irrilevanti = sum(1 for s in scores if s < 30)
@@ -137,13 +129,12 @@ Rispondi SOLO in questo formato JSON, senza testo aggiuntivo:
 
         commento = risultato_llm.get("commento_generale", "")
 
-        # Stato finale
         if pct_irrilevanti > 50:
-            stato = "NON CONFORME"
+            stato = STATUS_NON_COMPLIANT
         elif pct_irrilevanti > 25 or score_medio < 50:
-            stato = "ATTENZIONE"
+            stato = STATUS_ATTENTION
         else:
-            stato = "CONFORME"
+            stato = STATUS_COMPLIANT
 
         return {
             "stato": stato,
@@ -156,10 +147,10 @@ Rispondi SOLO in questo formato JSON, senza testo aggiuntivo:
 
     except Exception as e:
         return {
-            "stato": "ATTENZIONE",
+            "stato": STATUS_ATTENTION,
             "score_medio": 0,
             "pct_irrilevanti": 0,
             "commento": "",
             "dettaglio": [],
-            "messaggio": f"Errore durante l'analisi LLM della rilevanza: {str(e)}"
+            "messaggio": t("llm_generic_error", error=str(e))
         }

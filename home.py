@@ -4,82 +4,78 @@ from dotenv import load_dotenv
 import os
 from llm import mostra_suggerimenti_llm
 from bias import trova_attributi_sensibili
+from i18n import t, sector_label, sector_options, SECTOR_PLACEHOLDER
 
 load_dotenv()
 
 def mostra_home():
-    st.title("AI Readiness Framework")
-    st.write("Verifica se il tuo dataset rispetta i requisiti dell'AI Act per i sistemi ad alto rischio (Allegato III).")
+    st.title(t("home_title"))
+    st.write(t("home_intro"))
 
     st.divider()
 
-    # ── Selezione settore ────────────────────────────────────────────────────
-    st.subheader("1. Seleziona il settore di applicazione")
+    # ── Sector selection ─────────────────────────────────────────────────────
+    st.subheader(t("sector_section_title"))
     settore = st.selectbox(
-        "A quale settore appartiene il tuo sistema AI?",
-        [
-            "Seleziona...",
-            "Biometria",
-            "Infrastrutture critiche",
-            "Istruzione e formazione",
-            "Occupazione e selezione del personale",
-            "Servizi essenziali (credito, welfare, assicurazioni)",
-            "Forze dell'ordine",
-            "Migrazione e gestione delle frontiere",
-            "Giustizia e processi democratici"
-        ]
+        t("sector_question"),
+        sector_options(),
+        format_func=sector_label,
     )
 
-    # ── Descrizione caso d'uso ───────────────────────────────────────────────
-    st.subheader("2. Descrivi come utilizzerai questo dataset")
+    # ── Use case description ─────────────────────────────────────────────────
+    st.subheader(t("usecase_section_title"))
     descrizione = st.text_area(
-        "Descrizione del caso d'uso",
-        placeholder="Es. Questo dataset verrà usato per addestrare un classificatore che predice...",
+        t("usecase_label"),
+        placeholder=t("usecase_placeholder"),
         height=120
     )
 
-    # ── Caricamento CSV ──────────────────────────────────────────────────────
-    st.subheader("3. Carica il tuo dataset")
+    # ── CSV upload ────────────────────────────────────────────────────────────
+    st.subheader(t("upload_section_title"))
     file = st.file_uploader(
-        "Trascina qui il tuo file CSV oppure clicca per sfogliare",
+        t("upload_label"),
         type=["csv"],
-        help="Formato supportato: .csv — Max 200 MB"
+        help=t("upload_help")
     )
 
     df = None
     if file is not None:
         try:
             df = pd.read_csv(file, sep=None, engine="python")
-            st.success(f"File caricato correttamente — {df.shape[0]} righe × {df.shape[1]} colonne")
+            st.success(t("upload_success", rows=df.shape[0], cols=df.shape[1]))
             st.dataframe(df.head(5), use_container_width=True)
             st.session_state.dataset = df
         except Exception as e:
-            st.error(f"Errore nella lettura del file: {e}")
+            st.error(t("upload_error", error=e))
 
-    # ── Selezione target e attributi sensibili ───────────────────────────────
-    if df is not None and settore != "Seleziona..." and descrizione.strip():
-        st.subheader("4. Configurazione analisi bias")
+    # ── Target and sensitive attribute selection ─────────────────────────────
+    if df is not None and settore != SECTOR_PLACEHOLDER and descrizione.strip():
+        st.subheader(t("bias_config_title"))
 
         modalita = st.radio(
-            "Come vuoi identificare gli attributi sensibili?",
-            ["🤖 Automatico con LLM", "✋ Manuale"],
+            t("bias_mode_question"),
+            ["auto_llm", "manual"],
+            format_func=lambda m: t("mode_auto_llm") if m == "auto_llm" else t("mode_manual"),
             horizontal=True
         )
 
-        if modalita == "🤖 Automatico con LLM":
+        if modalita == "auto_llm":
             target, attributi = mostra_suggerimenti_llm(df, descrizione, settore)
         else:
             suggeriti = trova_attributi_sensibili(df)
             if suggeriti:
-                st.info(f"Ho rilevato automaticamente questi possibili attributi sensibili: **{', '.join(suggeriti)}**")
+                st.info(t("detected_sensitive_info", cols=", ".join(suggeriti)))
 
-            colonne = ["Nessuna — salta questa dimensione"] + list(df.columns)
-            target_sel = st.selectbox("Colonna target", colonne, key="bias_target")
-            target = target_sel if target_sel != "Nessuna — salta questa dimensione" else None
+            colonne = [None] + list(df.columns)
+            target = st.selectbox(
+                t("target_column_label"), colonne,
+                format_func=lambda c: t("no_dimension_option") if c is None else c,
+                key="bias_target"
+            )
 
             if target:
                 attributi = st.multiselect(
-                    "Attributi sensibili",
+                    t("sensitive_attrs_label"),
                     [col for col in df.columns if col != target],
                     default=[col for col in suggeriti if col != target],
                     key="bias_attributi"
@@ -91,20 +87,20 @@ def mostra_home():
         st.session_state.attributi_sensibili = attributi
 
     elif df is not None:
-        st.info("Completa settore e descrizione per configurare l'analisi del bias.")
+        st.info(t("complete_fields_info"))
         st.session_state.target = None
         st.session_state.attributi_sensibili = []
 
     st.divider()
 
-    # ── Pulsante Avanti ──────────────────────────────────────────────────────
-    if st.button("Avanti →", type="primary", use_container_width=True):
-        if settore == "Seleziona...":
-            st.warning("Seleziona il settore di applicazione prima di continuare.")
+    # ── Next button ───────────────────────────────────────────────────────────
+    if st.button(t("next_button"), type="primary", use_container_width=True):
+        if settore == SECTOR_PLACEHOLDER:
+            st.warning(t("warn_select_sector"))
         elif not descrizione.strip():
-            st.warning("Inserisci una descrizione del caso d'uso prima di continuare.")
+            st.warning(t("warn_enter_description"))
         elif st.session_state.get("dataset") is None:
-            st.warning("Carica il dataset CSV prima di continuare.")
+            st.warning(t("warn_upload_dataset"))
         else:
             st.session_state.settore = settore
             st.session_state.descrizione = descrizione

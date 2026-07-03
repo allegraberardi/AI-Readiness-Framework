@@ -1,73 +1,78 @@
 import pandas as pd
 import streamlit as st
+from i18n import (
+    t, t_level, lang_name, sector_label_en,
+    STATUS_COMPLIANT, STATUS_ATTENTION, STATUS_NON_COMPLIANT,
+    LEVEL_HIGH, LEVEL_MEDIUM, LEVEL_LOW,
+)
 
-# ── Keyword per identificare automaticamente attributi sensibili ──────────────
-# Basate sulle categorie speciali dell'Art. 9 GDPR e attributi protetti AI Act
+# ── Keywords used to automatically identify sensitive attributes ──────────────
+# Based on the special categories in Art. 9 GDPR and protected attributes in the AI Act
 KEYWORD_SENSIBILI = {
-    # Genere e sesso
+    # Gender and sex
     "genere_sesso": ["gender", "genere", "sex", "sesso"],
 
-    # Età
+    # Age
     "eta": ["age", "età", "eta", "age_group", "birth", "nascita", "dob", "born"],
 
-    # Origine razziale ed etnica (Art. 9 GDPR)
+    # Racial and ethnic origin (Art. 9 GDPR)
     "etnia": ["race", "razza", "ethnicity", "etnia", "ethnic", "origin", "origine"],
 
-    # Nazionalità e provenienza
+    # Nationality and background
     "nazionalita": ["nationality", "nazionalità", "country", "paese", "nation", "nazione"],
 
-    # Credenze religiose e filosofiche (Art. 9 GDPR)
+    # Religious and philosophical beliefs (Art. 9 GDPR)
     "religione": ["religion", "religione", "faith", "credo", "church", "chiesa",
                   "belief", "credenza", "confession", "confessione"],
 
-    # Opinioni politiche (Art. 9 GDPR)
+    # Political opinions (Art. 9 GDPR)
     "politica": ["political", "politico", "party", "partito", "vote", "voto",
                  "ideology", "ideologia", "opinion", "opinione"],
 
-    # Orientamento sessuale e vita sessuale (Art. 9 GDPR)
+    # Sexual orientation and sex life (Art. 9 GDPR)
     "orientamento": ["sexual", "sessuale", "orientation", "orientamento",
                      "lgbt", "gay", "lesbian", "bisexual"],
 
-    # Dati sulla salute (Art. 9 GDPR)
+    # Health data (Art. 9 GDPR)
     "salute": ["health", "salute", "medical", "medico", "disease", "malattia",
                "diagnosis", "diagnosi", "illness", "disorder", "condition",
                "patient", "paziente", "hospital", "ospedale", "clinical"],
 
-    # Disabilità (Art. 9 GDPR)
+    # Disability (Art. 9 GDPR)
     "disabilita": ["disability", "disabilità", "disabled", "disabile",
                    "handicap", "impairment", "special_needs"],
 
-    # Dati genetici (Art. 9 GDPR)
+    # Genetic data (Art. 9 GDPR)
     "genetica": ["genetic", "genetico", "dna", "gene", "genome", "genoma",
                  "hereditary", "ereditario"],
 
-    # Dati biometrici (Art. 9 GDPR)
+    # Biometric data (Art. 9 GDPR)
     "biometria": ["biometric", "biometrico", "fingerprint", "impronta",
                   "facial", "facciale", "iris", "retina", "voice", "voce"],
 
-    # Appartenenza sindacale (Art. 9 GDPR)
+    # Trade union membership (Art. 9 GDPR)
     "sindacato": ["union", "sindacato", "trade_union", "labor", "labour",
                   "sindacale", "membership"],
 
-    # Reddito e situazione economica
+    # Income and financial status
     "reddito": ["income", "reddito", "salary", "stipendio", "wage", "earning",
                 "wealth", "ricchezza", "poverty", "povertà"],
 
-    # Stato civile e famiglia
+    # Marital and family status
     "stato_civile": ["marital", "stato_civile", "married", "sposato",
                      "divorced", "divorziato", "family", "famiglia"],
 
-    # Istruzione
+    # Education
     "istruzione": ["education", "istruzione", "degree", "laurea",
                    "school", "scuola", "qualification"],
 }
 
-# Lista piatta per ricerca rapida
+# Flat list for fast lookup
 KEYWORD_LISTA = [kw for gruppo in KEYWORD_SENSIBILI.values() for kw in gruppo]
 
 
 def trova_attributi_sensibili(df):
-    """Cerca colonne con nomi simili a keyword sensibili GDPR/AI Act."""
+    """Finds columns whose name resembles a GDPR/AI Act sensitive keyword."""
     trovati = []
     for col in df.columns:
         col_lower = col.lower().replace(" ", "_")
@@ -79,7 +84,7 @@ def trova_attributi_sensibili(df):
 
 
 def categoria_gdpr(col):
-    """Restituisce la categoria GDPR di una colonna se è sensibile."""
+    """Returns the GDPR category of a column if it is sensitive."""
     col_lower = col.lower().replace(" ", "_")
     for categoria, keywords in KEYWORD_SENSIBILI.items():
         for kw in keywords:
@@ -88,26 +93,25 @@ def categoria_gdpr(col):
     return None
 
 
-
 def calcola_bias(df, target, attributi_sensibili):
     """
-    Calcola Statistical Parity Difference, Disparate Impact e Class Imbalance
-    per ogni attributo sensibile rispetto alla colonna target.
-    Allineato al metodo di AIF360.
+    Computes Statistical Parity Difference, Disparate Impact and Class Imbalance
+    for each sensitive attribute relative to the target column.
+    Aligned with the AIF360 methodology.
     """
     risultati_dettaglio = []
     stati = []
 
-    # Verifica che il target sia binario
+    # Check that the target is binary
     valori_target = df[target].dropna().unique()
     if len(valori_target) != 2:
         return {
-            "stato": "ATTENZIONE",
-            "messaggio": f"La colonna target '{target}' non è binaria ({len(valori_target)} valori unici). Le metriche di fairness richiedono un target binario.",
+            "stato": STATUS_ATTENTION,
+            "messaggio": t("bias_target_not_binary", target=target, n=len(valori_target)),
             "dettaglio": []
         }
 
-    # Valore positivo = 1 se presente, altrimenti il valore massimo
+    # Positive value = 1 if present, otherwise the maximum value
     valore_positivo = 1 if 1 in valori_target else max(valori_target)
 
     for attr in attributi_sensibili:
@@ -118,20 +122,18 @@ def calcola_bias(df, target, attributi_sensibili):
 
         # ── Class Imbalance ──────────────────────────────────────────────────
         conteggi = df[attr].value_counts()
-        gruppo_min = conteggi.idxmin()
-        gruppo_max = conteggi.idxmax()
         pct_min = round(conteggi.min() / len(df) * 100, 1)
         pct_max = round(conteggi.max() / len(df) * 100, 1)
         imbalance = round(pct_max - pct_min, 1)
 
         if imbalance > 40:
-            ci_gravita = "ALTA"
+            ci_gravita = LEVEL_HIGH
         elif imbalance > 20:
-            ci_gravita = "MEDIA"
+            ci_gravita = LEVEL_MEDIUM
         else:
-            ci_gravita = "BASSA"
+            ci_gravita = LEVEL_LOW
 
-        # ── Proporzione decisioni positive per ogni gruppo ───────────────────
+        # ── Proportion of positive outcomes for each group ────────────────────
         proporzioni = {}
         for gruppo in gruppi:
             subset = df[df[attr] == gruppo]
@@ -143,76 +145,76 @@ def calcola_bias(df, target, attributi_sensibili):
         if len(proporzioni) < 2:
             continue
 
-        # Gruppo privilegiato = quello con proporzione più alta
-        # Gruppo svantaggiato = quello con proporzione più bassa
+        # Privileged group = the one with the highest proportion
+        # Disadvantaged group = the one with the lowest proportion
         gruppo_privilegiato = max(proporzioni, key=proporzioni.get)
         gruppo_svantaggiato = min(proporzioni, key=proporzioni.get)
         prop_privilegiato = proporzioni[gruppo_privilegiato]
         prop_svantaggiato = proporzioni[gruppo_svantaggiato]
 
-        # ── Statistical Parity Difference ────────────────────────────────────
-        # Formula: P(positivo | svantaggiato) - P(positivo | privilegiato)
-        # Valore ideale = 0, negativo = discriminazione
+        # ── Statistical Parity Difference ─────────────────────────────────────
+        # Formula: P(positive | disadvantaged) - P(positive | privileged)
+        # Ideal value = 0, negative = discrimination
         spd = round(prop_svantaggiato - prop_privilegiato, 4)
         spd_abs = abs(spd)
 
         if spd_abs > 0.2:
-            spd_gravita = "ALTA"
+            spd_gravita = LEVEL_HIGH
         elif spd_abs > 0.1:
-            spd_gravita = "MEDIA"
+            spd_gravita = LEVEL_MEDIUM
         else:
-            spd_gravita = "BASSA"
+            spd_gravita = LEVEL_LOW
 
-        # ── Disparate Impact ─────────────────────────────────────────────────
-        # Formula: P(positivo | svantaggiato) / P(positivo | privilegiato)
-        # Valore ideale = 1.0, fair se >= 0.8 e <= 1.25
+        # ── Disparate Impact ────────────────────────────────────────────────────
+        # Formula: P(positive | disadvantaged) / P(positive | privileged)
+        # Ideal value = 1.0, fair if >= 0.8 and <= 1.25
         if prop_privilegiato > 0:
             di = round(prop_svantaggiato / prop_privilegiato, 4)
         else:
             di = 0
 
         if di < 0.6 or di > 1.4:
-            di_gravita = "ALTA"
+            di_gravita = LEVEL_HIGH
         elif di < 0.8 or di > 1.25:
-            di_gravita = "MEDIA"
+            di_gravita = LEVEL_MEDIUM
         else:
-            di_gravita = "BASSA"
+            di_gravita = LEVEL_LOW
 
-        # ── Gravità complessiva ───────────────────────────────────────────────
-        gravita_valori = {"ALTA": 3, "MEDIA": 2, "BASSA": 1}
+        # ── Overall severity ─────────────────────────────────────────────────
+        gravita_valori = {LEVEL_HIGH: 3, LEVEL_MEDIUM: 2, LEVEL_LOW: 1}
         gravita_max = max(
             gravita_valori[spd_gravita],
             gravita_valori[di_gravita],
             gravita_valori[ci_gravita]
         )
-        gravita_complessiva = {3: "ALTA", 2: "MEDIA", 1: "BASSA"}[gravita_max]
+        gravita_complessiva = {3: LEVEL_HIGH, 2: LEVEL_MEDIUM, 1: LEVEL_LOW}[gravita_max]
 
         risultati_dettaglio.append({
-            "Attributo": attr,
-            "Gruppo privilegiato": f"{gruppo_privilegiato} ({round(prop_privilegiato*100,2)}%)",
-            "Gruppo svantaggiato": f"{gruppo_svantaggiato} ({round(prop_svantaggiato*100,2)}%)",
-            "Statistical Parity Difference": f"{spd} (soglia: |SPD| < 0.1)",
-            "Disparate Impact": f"{di} (soglia: 0.8 ≤ DI ≤ 1.25)",
-            "Class Imbalance": f"{imbalance}% di differenza tra gruppi",
-            "Gravità": gravita_complessiva
+            t("col_attribute"): attr,
+            t("col_privileged_group"): f"{gruppo_privilegiato} ({round(prop_privilegiato*100,2)}%)",
+            t("col_disadvantaged_group"): f"{gruppo_svantaggiato} ({round(prop_svantaggiato*100,2)}%)",
+            t("col_spd"): f"{spd} {t('spd_threshold_note')}",
+            t("col_di"): f"{di} {t('di_threshold_note')}",
+            t("col_class_imbalance"): t("class_imbalance_note", pct=imbalance),
+            t("col_severity"): t_level(gravita_complessiva),
         })
 
         stati.append(gravita_complessiva)
 
-    # ── Stato finale ─────────────────────────────────────────────────────────
+    # ── Final status ─────────────────────────────────────────────────────────
     if not stati:
         return {
-            "stato": "ATTENZIONE",
-            "messaggio": "Non è stato possibile calcolare le metriche di bias. Verifica che gli attributi selezionati abbiano almeno due valori distinti.",
+            "stato": STATUS_ATTENTION,
+            "messaggio": t("bias_cannot_calculate"),
             "dettaglio": []
         }
 
-    if "ALTA" in stati:
-        stato = "NON CONFORME"
-    elif "MEDIA" in stati:
-        stato = "ATTENZIONE"
+    if LEVEL_HIGH in stati:
+        stato = STATUS_NON_COMPLIANT
+    elif LEVEL_MEDIUM in stati:
+        stato = STATUS_ATTENTION
     else:
-        stato = "CONFORME"
+        stato = STATUS_COMPLIANT
 
     return {
         "stato": stato,
@@ -222,56 +224,52 @@ def calcola_bias(df, target, attributi_sensibili):
 
 def commento_llm_bias(risultati_dettaglio, descrizione, settore, target):
     """
-    Chiede all'LLM di interpretare i risultati del bias nel contesto del caso d'uso.
+    Asks the LLM to interpret the bias results in the context of the use case.
     """
-    from openai import OpenAI
-    from dotenv import load_dotenv
-    import os
-    import json
+    from llm_settings import get_client, get_model
 
-    load_dotenv()
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-    )
+    client = get_client()
 
     riassunto = []
     for r in risultati_dettaglio:
+        values = list(r.values())
         riassunto.append(
-            f"Attributo: {r['Attributo']} — "
-            f"Gruppo privilegiato: {r['Gruppo privilegiato']} — "
-            f"Gruppo svantaggiato: {r['Gruppo svantaggiato']} — "
-            f"Statistical Parity Difference: {r['Statistical Parity Difference']} — "
-            f"Disparate Impact: {r['Disparate Impact']} — "
-            f"Class Imbalance: {r['Class Imbalance']} — "
-            f"Gravità: {r['Gravità']}"
+            f"Attribute: {values[0]} — "
+            f"Privileged group: {values[1]} — "
+            f"Disadvantaged group: {values[2]} — "
+            f"Statistical Parity Difference: {values[3]} — "
+            f"Disparate Impact: {values[4]} — "
+            f"Class Imbalance: {values[5]} — "
+            f"Severity: {values[6]}"
         )
 
-    prompt = f"""Sei un esperto di AI fairness e del Regolamento Europeo sull'Intelligenza Artificiale (AI Act).
+    settore_en = sector_label_en(settore)
 
-Analizza i risultati del bias per questo dataset e fornisci una valutazione contestualizzata.
+    prompt = f"""You are an expert in AI fairness and the EU Artificial Intelligence Act (AI Act).
 
-CASO D'USO: {descrizione}
-SETTORE (Allegato III AI Act): {settore}
-VARIABILE TARGET: {target}
+Analyze the bias results for this dataset and provide a contextualized assessment.
 
-RISULTATI ANALISI BIAS:
+USE CASE: {descrizione}
+SECTOR (AI Act, Annex III): {settore_en}
+TARGET VARIABLE: {target}
+
+BIAS ANALYSIS RESULTS:
 {chr(10).join(riassunto)}
 
-Fornisci:
-1. Una valutazione complessiva del bias nel dataset in relazione al caso d'uso
-2. I gruppi più a rischio di discriminazione
-3. Una raccomandazione concreta per mitigare il bias in riferimento all'Art. 10(2)(f) e (g) dell'AI Act
+Provide:
+1. An overall assessment of the bias in the dataset in relation to the use case
+2. The groups most at risk of discrimination
+3. A concrete recommendation to mitigate bias, referring to Art. 10(2)(f) and (g) of the AI Act
 
-Sii conciso (massimo 5 righe) e preciso."""
+Be concise (5 lines maximum) and precise. Reply in {lang_name()}."""
 
     try:
         response = client.chat.completions.create(
-            model="mistralai/mistral-large-2512",
+            model=get_model(),
             messages=[{"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.2
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"Errore durante l'analisi LLM: {str(e)}"
+        return t("llm_generic_error", error=str(e))

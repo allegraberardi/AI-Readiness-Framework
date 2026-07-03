@@ -1,12 +1,16 @@
 import streamlit as st
+from i18n import t, language_selector
+from llm_settings import llm_settings_sidebar
 
 st.set_page_config(
-    page_title="AI Readiness Framework",
+    page_title="NORMA",
     page_icon="🤖",
     layout="wide"
 )
 
-# ── Inizializza lo stato della sessione ──────────────────────────────────────
+# ── Initialize session state ────────────────────────────────────────────────
+if "lang" not in st.session_state:
+    st.session_state.lang = "en"
 if "pagina" not in st.session_state:
     st.session_state.pagina = "home"
 if "dataset" not in st.session_state:
@@ -22,14 +26,17 @@ if "target" not in st.session_state:
 if "attributi_sensibili" not in st.session_state:
     st.session_state.attributi_sensibili = []
 
-# ── Importa le pagine ────────────────────────────────────────────────────────
+language_selector()
+llm_settings_sidebar()
+
+# ── Import pages ─────────────────────────────────────────────────────────────
 from home import mostra_home
 from governance import mostra_governance
 from risultati import mostra_risultati
 
-# ── Barra di progresso in cima ───────────────────────────────────────────────
+# ── Progress bar at the top ─────────────────────────────────────────────────
 pagine = ["home", "governance", "risultati"]
-nomi = ["1. Informazioni", "2. Governance", "3. Risultati"]
+nomi = [t("nav_step1"), t("nav_step2"), t("nav_step3")]
 idx = pagine.index(st.session_state.pagina)
 
 col1, col2, col3 = st.columns(3)

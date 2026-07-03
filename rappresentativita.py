@@ -1,82 +1,74 @@
 import pandas as pd
 import streamlit as st
-import json
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
+from i18n import (
+    t, t_level, t_status, lang_name, status_emoji, sector_label_en,
+    STATUS_COMPLIANT, STATUS_ATTENTION, STATUS_NON_COMPLIANT,
+    LEVEL_HIGH, LEVEL_MEDIUM, LEVEL_LOW,
+)
+from llm_settings import get_client, get_model
 
-load_dotenv()
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-# ── Variabili demografiche rilevanti per settore ──────────────────────────────
+# ── Demographic variables relevant per sector ─────────────────────────────────
 VARIABILI_PER_SETTORE = {
-    "Occupazione e selezione del personale": {
+    "employment": {
         "keywords": ["gender", "genere", "sex", "sesso", "age", "età", "eta",
                      "education", "istruzione", "nationality", "nazionalità", "country"],
-        "focus": "genere, età e livello di istruzione",
-        "motivo": "I sistemi di selezione del personale possono discriminare in base a genere, età e provenienza — come nel caso Amazon (2018)."
+        "focus_key": "sector_focus_employment",
+        "reason_key": "sector_reason_employment",
     },
-    "Servizi essenziali (credito, welfare, assicurazioni)": {
+    "essential_services": {
         "keywords": ["gender", "genere", "sex", "sesso", "age", "età", "eta",
                      "income", "reddito", "race", "razza", "ethnicity", "etnia",
                      "education", "istruzione"],
-        "focus": "genere, età, etnia e reddito",
-        "motivo": "I sistemi di valutazione del credito possono discriminare in base a genere ed etnia, perpetuando disuguaglianze storiche."
+        "focus_key": "sector_focus_essential_services",
+        "reason_key": "sector_reason_essential_services",
     },
-    "Forze dell'ordine": {
+    "law_enforcement": {
         "keywords": ["race", "razza", "ethnicity", "etnia", "nationality",
                      "nazionalità", "age", "età", "eta", "gender", "genere"],
-        "focus": "etnia, razza e provenienza geografica",
-        "motivo": "I sistemi usati nelle forze dell'ordine mostrano bias sistematici contro minoranze etniche — come documentato nel caso COMPAS."
+        "focus_key": "sector_focus_law_enforcement",
+        "reason_key": "sector_reason_law_enforcement",
     },
-    "Istruzione e formazione": {
+    "education": {
         "keywords": ["country", "paese", "nationality", "nazionalità", "gender",
                      "genere", "sex", "sesso", "age", "età", "eta"],
-        "focus": "provenienza geografica e genere",
-        "motivo": "I sistemi di valutazione scolastica possono riflettere disuguaglianze geografiche e di genere."
+        "focus_key": "sector_focus_education",
+        "reason_key": "sector_reason_education",
     },
-    "Giustizia e processi democratici": {
+    "justice": {
         "keywords": ["race", "razza", "ethnicity", "etnia", "age", "età", "eta",
                      "gender", "genere", "income", "reddito"],
-        "focus": "etnia, razza ed età",
-        "motivo": "I sistemi di supporto decisionale in ambito giudiziario devono garantire equità tra gruppi demografici diversi."
+        "focus_key": "sector_focus_justice",
+        "reason_key": "sector_reason_justice",
     },
-    "Migrazione e gestione delle frontiere": {
+    "migration": {
         "keywords": ["nationality", "nazionalità", "country", "paese",
                      "religion", "religione", "age", "età", "eta", "gender", "genere"],
-        "focus": "nazionalità, religione e provenienza geografica",
-        "motivo": "I sistemi di valutazione delle domande di asilo devono essere rappresentativi di tutte le nazionalità."
+        "focus_key": "sector_focus_migration",
+        "reason_key": "sector_reason_migration",
     },
-    "Biometria": {
+    "biometrics": {
         "keywords": ["race", "razza", "ethnicity", "etnia", "gender", "genere",
                      "age", "età", "eta", "skin", "pelle"],
-        "focus": "etnia, genere ed età",
-        "motivo": "I sistemi biometrici mostrano performance inferiori su persone di colore e donne."
+        "focus_key": "sector_focus_biometrics",
+        "reason_key": "sector_reason_biometrics",
     },
-    "Infrastrutture critiche": {
+    "critical_infrastructure": {
         "keywords": ["region", "regione", "area", "zone", "zona", "location", "posizione"],
-        "focus": "distribuzione geografica",
-        "motivo": "I sistemi per infrastrutture critiche devono coprire tutte le aree geografiche."
-    }
+        "focus_key": "sector_focus_critical_infrastructure",
+        "reason_key": "sector_reason_critical_infrastructure",
+    },
 }
-
-
-def get_client():
-    return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=OPENROUTER_API_KEY,
-    )
 
 
 def analizza_rappresentativita(df, settore=None):
     """
-    Analisi completa della rappresentatività con statistiche per ogni colonna.
+    Full representativeness analysis with statistics for each column.
     """
     dettaglio_categoriche = []
     dettaglio_numeriche = []
     problemi = []
 
-    # ── Colonne categoriche ──────────────────────────────────────────────────
+    # ── Categorical columns ───────────────────────────────────────────────────
     for col in df.select_dtypes(include=["object", "category"]).columns:
         conteggi = df[col].value_counts()
         min_classe = conteggi.min()
@@ -84,11 +76,11 @@ def analizza_rappresentativita(df, settore=None):
         pct_min = round(min_classe / df.shape[0] * 100, 2)
 
         if min_classe < 50:
-            gravita = "ALTA"
+            gravita = LEVEL_HIGH
         elif min_classe < 100:
-            gravita = "MEDIA"
+            gravita = LEVEL_MEDIUM
         else:
-            gravita = "BASSA"
+            gravita = LEVEL_LOW
 
         dettaglio_categoriche.append({
             "colonna": col,
@@ -101,23 +93,23 @@ def analizza_rappresentativita(df, settore=None):
 
         if min_classe < 100:
             problemi.append({
-                "Colonna": col,
-                "Problema": f"Classe '{classe_min}' ha solo {min_classe} esempi ({pct_min}%)",
-                "Gravità": gravita
+                t("col_column"): col,
+                t("col_problem"): t("repr_class_problem", cls=classe_min, n=min_classe, pct=pct_min),
+                t("col_severity"): t_level(gravita)
             })
 
-    # ── Colonne numeriche ────────────────────────────────────────────────────
+    # ── Numeric columns ───────────────────────────────────────────────────────
     for col in df.select_dtypes(include=["number"]).columns:
         dettaglio_numeriche.append({
-            "Colonna": col,
-            "Min": round(df[col].min(), 2),
-            "Max": round(df[col].max(), 2),
-            "Media": round(df[col].mean(), 2),
-            "Mediana": round(df[col].median(), 2),
-            "Valori unici": df[col].nunique()
+            t("col_column"): col,
+            t("col_min"): round(df[col].min(), 2),
+            t("col_max"): round(df[col].max(), 2),
+            t("col_mean"): round(df[col].mean(), 2),
+            t("col_median"): round(df[col].median(), 2),
+            t("col_unique_values"): df[col].nunique()
         })
 
-    # ── Analisi contestuale per settore ─────────────────────────────────────
+    # ── Contextual analysis by sector ────────────────────────────────────────
     contestuale = None
     if settore and settore in VARIABILI_PER_SETTORE:
         config = VARIABILI_PER_SETTORE[settore]
@@ -132,17 +124,17 @@ def analizza_rappresentativita(df, settore=None):
         contestuale = {
             "trovate": len(colonne_rilevanti) > 0,
             "colonne_trovate": colonne_rilevanti,
-            "focus": config["focus"],
-            "motivo": config["motivo"]
+            "focus": t(config["focus_key"]),
+            "motivo": t(config["reason_key"]),
         }
 
-    # ── Stato finale ─────────────────────────────────────────────────────────
-    if any(p["Gravità"] == "ALTA" for p in problemi):
-        stato = "NON CONFORME"
+    # ── Final status ─────────────────────────────────────────────────────────
+    if any(p[t("col_severity")] == t_level(LEVEL_HIGH) for p in problemi):
+        stato = STATUS_NON_COMPLIANT
     elif problemi:
-        stato = "ATTENZIONE"
+        stato = STATUS_ATTENTION
     else:
-        stato = "CONFORME"
+        stato = STATUS_COMPLIANT
 
     return {
         "stato": stato,
@@ -155,104 +147,107 @@ def analizza_rappresentativita(df, settore=None):
 
 def commento_llm_rappresentativita(df, settore, descrizione, risultato):
     """
-    Chiede all'LLM di interpretare i risultati della rappresentatività.
+    Asks the LLM to interpret the representativeness results.
     """
     riassunto = []
     for cat in risultato["categoriche"]:
         top = cat["conteggi"].head(3).to_dict()
         riassunto.append(
-            f"{cat['colonna']}: distribuzione {top}, "
-            f"classe minima '{cat['classe_min']}' con {cat['min_classe']} esempi ({cat['pct_min']}%)"
+            f"{cat['colonna']}: distribution {top}, "
+            f"minimum class '{cat['classe_min']}' with {cat['min_classe']} examples ({cat['pct_min']}%)"
         )
 
     for num in risultato["numeriche"]:
+        values = list(num.values())
         riassunto.append(
-            f"{num['Colonna']}: min={num['Min']}, max={num['Max']}, media={num['Media']}"
+            f"{values[0]}: min={values[1]}, max={values[2]}, mean={values[3]}"
         )
 
-    prompt = f"""Sei un esperto di AI fairness e del Regolamento Europeo sull'Intelligenza Artificiale (AI Act).
+    settore_en = sector_label_en(settore)
 
-Analizza la rappresentatività di questo dataset in relazione al caso d'uso descritto.
+    prompt = f"""You are an expert in AI fairness and the EU Artificial Intelligence Act (AI Act).
 
-CASO D'USO: {descrizione}
-SETTORE (Allegato III AI Act): {settore}
+Analyze the representativeness of this dataset in relation to the described use case.
 
-DISTRIBUZIONE DEI DATI:
+USE CASE: {descrizione}
+SECTOR (AI Act, Annex III): {settore_en}
+
+DATA DISTRIBUTION:
 {chr(10).join(riassunto)}
 
-Fornisci:
-1. Una valutazione della rappresentatività in relazione al caso d'uso
-2. Eventuali gruppi sottorappresentati che potrebbero causare problemi
-3. Una raccomandazione concreta per migliorare la rappresentatività
+Provide:
+1. An assessment of the representativeness in relation to the use case
+2. Any underrepresented groups that could cause problems
+3. A concrete recommendation to improve representativeness
 
-Sii conciso (massimo 5 righe) e fai riferimento all'Art. 10 dell'AI Act dove pertinente."""
+Be concise (5 lines maximum) and refer to Art. 10 of the AI Act where relevant. Reply in {lang_name()}."""
 
     try:
         client = get_client()
         response = client.chat.completions.create(
-            model="mistralai/mistral-large-2512",
+            model=get_model(),
             messages=[{"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.2
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"Errore durante l'analisi LLM: {str(e)}"
+        return t("llm_generic_error", error=str(e))
 
 
 def mostra_rappresentativita_con_grafici(risultato, descrizione, settore, df):
     """
-    Mostra i risultati della rappresentatività con grafici e commento LLM.
+    Shows the representativeness results with charts and an LLM comment.
     """
     stato = risultato["stato"]
-    emoji = "🟢" if stato == "CONFORME" else "🟡" if stato == "ATTENZIONE" else "🔴"
+    emoji = status_emoji(stato)
 
-    st.markdown(f"### {emoji} Rappresentatività — {stato}")
-    st.caption("📖 Riferimento normativo: Art. 10, par. 3 e par. 4 AI Act — i dati devono essere sufficientemente rappresentativi")
+    st.markdown(f"### {emoji} {t('dim_representativeness')} — {t_status(stato)}")
+    st.caption(f"📖 {t('ref_representativeness')}")
 
-    if stato == "CONFORME":
-        st.success("Distribuzione delle classi bilanciata.")
-    elif stato == "ATTENZIONE":
-        st.warning("Alcune classi sono sottorappresentate.")
+    if stato == STATUS_COMPLIANT:
+        st.success(t("representativeness_ok"))
+    elif stato == STATUS_ATTENTION:
+        st.warning(t("representativeness_attention"))
     else:
-        st.error("Squilibri significativi rilevati — applicare tecniche di bilanciamento.")
+        st.error(t("representativeness_bad"))
 
-    # ── Grafici colonne categoriche ──────────────────────────────────────────
+    # ── Categorical column charts ─────────────────────────────────────────────
     if risultato["categoriche"]:
-        st.write("**Distribuzione variabili categoriche:**")
+        st.write(t("categorical_distribution_label"))
         for cat in risultato["categoriche"]:
-            with st.expander(f"📊 {cat['colonna']} — classe minima: '{cat['classe_min']}' ({cat['pct_min']}%)"):
+            with st.expander(t("expander_col", col=cat["colonna"], cls=cat["classe_min"], pct=cat["pct_min"])):
                 st.bar_chart(cat["conteggi"])
 
-    # ── Statistiche colonne numeriche ────────────────────────────────────────
+    # ── Numeric column statistics ─────────────────────────────────────────────
     if risultato["numeriche"]:
-        st.write("**Statistiche variabili numeriche:**")
+        st.write(t("numeric_stats_label"))
         df_num = pd.DataFrame(risultato["numeriche"])
         st.dataframe(df_num, use_container_width=True, hide_index=True)
 
-    # ── Analisi contestuale per settore ─────────────────────────────────────
+    # ── Contextual analysis by sector ────────────────────────────────────────
     contestuale = risultato.get("contestuale")
     if contestuale:
         st.write("---")
-        st.write("**Analisi contestuale per il settore selezionato:**")
-        st.info(f"Per questo settore è importante monitorare: **{contestuale['focus']}**\n\n_{contestuale['motivo']}_")
+        st.write(t("contextual_analysis_label"))
+        st.info(t("contextual_focus_info", focus=contestuale['focus'], reason=contestuale['motivo']))
 
         if not contestuale.get("trovate"):
-            st.warning("Non ho trovato colonne demografiche rilevanti per questo settore nel dataset.")
+            st.warning(t("contextual_not_found"))
         else:
-            st.write(f"Colonne rilevanti trovate: **{', '.join(contestuale.get('colonne_trovate', []))}**")
+            st.write(t("contextual_columns_found", cols=", ".join(contestuale.get('colonne_trovate', []))))
 
-    # ── Commento LLM ─────────────────────────────────────────────────────────
+    # ── LLM comment ───────────────────────────────────────────────────────────
     st.write("---")
-    st.write("**Interpretazione LLM:**")
-    with st.spinner("L'LLM sta analizzando la rappresentatività..."):
+    st.write(t("llm_interpretation_label"))
+    with st.spinner(t("representativeness_llm_spinner")):
         commento = commento_llm_rappresentativita(df, settore, descrizione, risultato)
     st.info(commento)
 
-    # ── Soglie ───────────────────────────────────────────────────────────────
-    with st.expander("📏 Soglie utilizzate per questa dimensione"):
-        st.write("**🟢 Conforme**: tutte le classi hanno più di 100 esempi")
-        st.write("**🟡 Attenzione**: almeno una classe ha tra 50 e 100 esempi")
-        st.write("**🔴 Non conforme**: almeno una classe ha meno di 50 esempi")
+    # ── Thresholds ────────────────────────────────────────────────────────────
+    with st.expander(t("thresholds_expander")):
+        st.write(f"**{status_emoji(STATUS_COMPLIANT)} {t_status(STATUS_COMPLIANT)}**: {t('thr_representativeness_compliant')}")
+        st.write(f"**{status_emoji(STATUS_ATTENTION)} {t_status(STATUS_ATTENTION)}**: {t('thr_representativeness_attention')}")
+        st.write(f"**{status_emoji(STATUS_NON_COMPLIANT)} {t_status(STATUS_NON_COMPLIANT)}**: {t('thr_representativeness_non_compliant')}")
 
     st.divider()

@@ -1,126 +1,162 @@
 import streamlit as st
+from i18n import t
+
+YES_NO_UNKNOWN = ["yes", "no", "unknown"]
+YES_NO_UNKNOWN_NA = ["yes", "no", "unknown", "not_applicable"]
+
+ANSWER_KEYS = {
+    "yes": "answer_yes",
+    "no": "answer_no",
+    "unknown": "answer_unknown",
+    "not_applicable": "answer_not_applicable",
+}
+
+
+def _answer_label(code):
+    return t(ANSWER_KEYS[code])
+
+
+ORIGIN_OPTIONS = ["__select__", "internal", "external_vendor", "open_source", "web_scraping", "unknown", "other"]
+METHOD_OPTIONS = ["__select__", "surveys", "sensors", "system_logs", "manual_entry", "automated_process", "unknown", "other"]
+LABELER_OPTIONS = ["__select__", "domain_experts", "crowdsourcing", "automatic_process", "combination", "unknown", "other"]
+
+
+def _select_label(prefix, code):
+    if code == "__select__":
+        return t("select_placeholder")
+    return t(f"{prefix}_{code}")
+
 
 def mostra_governance():
-    st.title("Governance del dataset")
-    st.write("Compila le informazioni sul tuo dataset. Le risposte verranno usate per valutare la dimensione Governance.")
-    st.info("💡 Se non conosci la risposta a una domanda seleziona 'Non lo so' — verrà considerato come un segnale di attenzione nella valutazione.")
+    st.title(t("gov_title"))
+    st.write(t("gov_intro"))
+    st.info(t("gov_unknown_hint"))
 
     st.divider()
     risposte = {}
 
-    # ── Origine dei dati ─────────────────────────────────────────────────────
-    st.subheader("Origine dei dati")
+    # ── Data origin ───────────────────────────────────────────────────────────
+    st.subheader(t("section_data_origin"))
 
     risposte["origine"] = st.selectbox(
-        "1. Da dove provengono i dati?",
-        ["Seleziona...", "Raccolti internamente", "Acquistati da fornitore esterno",
-         "Open source / pubblici", "Web scraping", "Non lo so", "Altro"]
+        t("q_origin"),
+        ORIGIN_OPTIONS,
+        format_func=lambda c: _select_label("origin", c)
     )
 
     risposte["anno"] = st.number_input(
-        "2. In che anno sono stati raccolti?",
+        t("q_year"),
         min_value=1990, max_value=2025, value=2023
     )
 
     risposte["dati_personali"] = st.radio(
-        "3. I dati contengono dati personali?",
-        ["Sì", "No", "Non lo so"]
+        t("q_personal_data"),
+        YES_NO_UNKNOWN,
+        format_func=_answer_label
     )
 
     st.divider()
 
-    # ── Processo di raccolta ─────────────────────────────────────────────────
-    st.subheader("Processo di raccolta")
+    # ── Collection process ───────────────────────────────────────────────────
+    st.subheader(t("section_collection_process"))
 
     risposte["metodo_raccolta"] = st.selectbox(
-        "4. Come sono stati raccolti?",
-        ["Seleziona...", "Sondaggi o questionari", "Sensori o dispositivi automatici",
-         "Log di sistema", "Inserimento manuale", "Processo automatizzato", "Non lo so", "Altro"]
+        t("q_collection_method"),
+        METHOD_OPTIONS,
+        format_func=lambda c: _select_label("method", c)
     )
 
     risposte["doc_raccolta"] = st.radio(
-        "5. Esiste documentazione del processo di raccolta?",
-        ["Sì", "No", "Non lo so"]
+        t("q_collection_doc"),
+        YES_NO_UNKNOWN,
+        format_func=_answer_label
     )
 
     risposte["consenso"] = st.radio(
-        "6. Le persone i cui dati sono stati raccolti erano consapevoli e hanno dato il consenso?",
-        ["Sì", "No", "Non lo so", "Non applicabile"]
+        t("q_consent"),
+        YES_NO_UNKNOWN_NA,
+        format_func=_answer_label
     )
 
     st.divider()
 
-    # ── Etichettatura e annotazione ──────────────────────────────────────────
-    st.subheader("Etichettatura e annotazione")
+    # ── Labeling and annotation ──────────────────────────────────────────────
+    st.subheader(t("section_labeling"))
 
     risposte["etichettati"] = st.radio(
-        "7. I dati sono etichettati?",
-        ["Sì", "No", "Non lo so"]
+        t("q_labeled"),
+        YES_NO_UNKNOWN,
+        format_func=_answer_label
     )
 
-    if risposte["etichettati"] == "Sì":
+    if risposte["etichettati"] == "yes":
         risposte["chi_etichetta"] = st.selectbox(
-            "8. Chi ha etichettato i dati?",
-            ["Seleziona...", "Esperti del dominio (es. medici, giuristi)",
-             "Crowdsourcing", "Processo automatico", "Combinazione di metodi", "Non lo so", "Altro"]
+            t("q_who_labeled"),
+            LABELER_OPTIONS,
+            format_func=lambda c: _select_label("labeler", c)
         )
         risposte["doc_etichettatura"] = st.radio(
-            "9. Esiste documentazione sui criteri di etichettatura?",
-            ["Sì", "No", "Non lo so"]
+            t("q_labeling_doc"),
+            YES_NO_UNKNOWN,
+            format_func=_answer_label
         )
 
     st.divider()
 
-    # ── Pulizia e pre-processing ─────────────────────────────────────────────
-    st.subheader("Pulizia e pre-processing")
+    # ── Cleaning and pre-processing ──────────────────────────────────────────
+    st.subheader(t("section_cleaning"))
 
     risposte["pulizia"] = st.radio(
-        "10. Il dataset è stato pulito o pre-processato?",
-        ["Sì", "No", "Non lo so"]
+        t("q_cleaned"),
+        YES_NO_UNKNOWN,
+        format_func=_answer_label
     )
 
-    if risposte["pulizia"] == "Sì":
+    if risposte["pulizia"] == "yes":
         risposte["doc_pulizia"] = st.radio(
-            "11. Le operazioni di pulizia sono documentate?",
-            ["Sì", "No", "Non lo so"]
+            t("q_cleaning_doc"),
+            YES_NO_UNKNOWN,
+            format_func=_answer_label
         )
 
     st.divider()
 
     # ── Data card ────────────────────────────────────────────────────────────
-    st.subheader("Data card")
+    st.subheader(t("section_data_card"))
 
     risposte["data_card"] = st.radio(
-        "12. Esiste una data card o datasheet for datasets per questo dataset?",
-        ["Sì", "No", "Non lo so"]
+        t("q_data_card"),
+        YES_NO_UNKNOWN,
+        format_func=_answer_label
     )
 
-    if risposte["data_card"] == "Sì":
+    if risposte["data_card"] == "yes":
         risposte["data_card_aggiornata"] = st.radio(
-            "13. La data card è aggiornata?",
-            ["Sì", "No", "Non lo so"]
+            t("q_data_card_updated"),
+            YES_NO_UNKNOWN,
+            format_func=_answer_label
         )
         file_data_card = st.file_uploader(
-            "14. Carica la data card",
+            t("q_data_card_upload"),
             type=["pdf", "docx", "txt"],
-            help="Opzionale — carica il file se disponibile"
+            help=t("data_card_upload_help")
         )
         if file_data_card is not None:
-            st.success("✅ Data card caricata!")
+            st.success(t("data_card_uploaded_success"))
             risposte["data_card_file"] = file_data_card.name
 
     st.divider()
 
-    # ── Navigazione ──────────────────────────────────────────────────────────
+    # ── Navigation ───────────────────────────────────────────────────────────
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("← Indietro", use_container_width=True):
+        if st.button(t("back_button"), use_container_width=True):
             st.session_state.pagina = "home"
             st.rerun()
 
     with col2:
-        if st.button("Analizza dataset →", type="primary", use_container_width=True):
+        if st.button(t("analyze_button"), type="primary", use_container_width=True):
             st.session_state.governance = risposte
             st.session_state.pagina = "risultati"
             st.rerun()

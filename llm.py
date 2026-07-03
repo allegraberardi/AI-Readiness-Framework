@@ -1,54 +1,46 @@
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
 import json
 import streamlit as st
-
-load_dotenv()
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-
-def get_client():
-    return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=OPENROUTER_API_KEY,
-    )
+from i18n import t, lang_name, sector_label_en
+from llm_settings import get_client, get_model
 
 
 def identifica_attributi_sensibili(descrizione, settore, colonne):
     """
-    Usa un LLM per identificare automaticamente target e attributi sensibili
-    a partire dalla descrizione del caso d'uso.
+    Uses an LLM to automatically identify the target column and sensitive
+    attributes from the use case description.
     """
     client = get_client()
+    settore_en = sector_label_en(settore)
 
-    prompt = f"""Sei un esperto di AI fairness e del Regolamento Europeo sull'Intelligenza Artificiale (AI Act).
+    prompt = f"""You are an expert in AI fairness and the EU Artificial Intelligence Act (AI Act).
 
-Ti viene fornito:
-1. Una descrizione del caso d'uso di un sistema AI ad alto rischio
-2. Il settore di applicazione (Allegato III dell'AI Act)
-3. La lista delle colonne presenti nel dataset
+You are given:
+1. A description of the use case of a high-risk AI system
+2. The application sector (AI Act, Annex III)
+3. The list of columns present in the dataset
 
-Il tuo compito è identificare:
-- La colonna TARGET: quella che il modello AI dovrà predire (es. approvato/rifiutato, assunto/non assunto)
-- Gli ATTRIBUTI SENSIBILI: colonne che rappresentano caratteristiche demografiche protette come genere, età, etnia, nazionalità, religione, disabilità, o variabili che potrebbero essere proxy di queste caratteristiche
+Your task is to identify:
+- The TARGET column: the one the AI model will predict (e.g. approved/rejected, hired/not hired)
+- The SENSITIVE ATTRIBUTES: columns that represent protected demographic characteristics such as gender, age, ethnicity, nationality, religion, disability, or variables that could be a proxy for these characteristics
 
-CASO D'USO: {descrizione}
-SETTORE: {settore}
-COLONNE DEL DATASET: {', '.join(colonne)}
+USE CASE: {descrizione}
+SECTOR: {settore_en}
+DATASET COLUMNS: {', '.join(colonne)}
 
-Rispondi SOLO in questo formato JSON, senza testo aggiuntivo:
+Reply ONLY in this JSON format, with no extra text:
 {{
-  "target": "nome_colonna_target",
-  "attributi_sensibili": ["colonna1", "colonna2"],
-  "spiegazione": "Breve spiegazione delle scelte fatte in riferimento all'Art. 10 dell'AI Act"
+  "target": "target_column_name",
+  "attributi_sensibili": ["column1", "column2"],
+  "spiegazione": "Brief explanation of the choices made, referring to Art. 10 of the AI Act"
 }}
 
-Se non riesci a identificare il target o gli attributi sensibili con certezza, metti null per il target e lista vuota per gli attributi sensibili."""
+Write the "spiegazione" field in {lang_name()}.
+
+If you cannot identify the target or sensitive attributes with confidence, set target to null and use an empty list for the sensitive attributes."""
 
     try:
         response = client.chat.completions.create(
-            model="mistralai/mistral-large-2512",
+            model=get_model(),
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500,
             temperature=0.1
@@ -58,7 +50,7 @@ Se non riesci a identificare il target o gli attributi sensibili con certezza, m
         testo = testo.replace("```json", "").replace("```", "").strip()
         risultato = json.loads(testo)
 
-        # Verifica che le colonne suggerite esistano nel dataset
+        # Check that the suggested columns exist in the dataset
         if risultato.get("target") not in colonne:
             risultato["target"] = None
         risultato["attributi_sensibili"] = [
@@ -72,41 +64,42 @@ Se non riesci a identificare il target o gli attributi sensibili con certezza, m
         return {
             "target": None,
             "attributi_sensibili": [],
-            "spiegazione": f"Errore durante l'analisi LLM: {str(e)}"
+            "spiegazione": t("llm_generic_error", error=str(e))
         }
 
 
 def mostra_suggerimenti_llm(df, descrizione, settore):
     """
-    Mostra i suggerimenti dell'LLM e permette all'utente di confermarli o modificarli.
+    Shows the LLM suggestions and lets the user confirm or edit them.
     """
-    st.subheader("🤖 Analisi automatica con LLM")
+    st.subheader(t("llm_auto_analysis_title"))
 
-    with st.spinner("L'LLM sta analizzando il caso d'uso..."):
+    with st.spinner(t("llm_spinner_usecase")):
         suggerimenti = identifica_attributi_sensibili(
             descrizione, settore, list(df.columns)
         )
 
     if suggerimenti.get("spiegazione"):
-        st.info(f"**Analisi LLM:** {suggerimenti['spiegazione']}")
+        st.info(t("llm_analysis_info", text=suggerimenti["spiegazione"]))
 
-    colonne = ["Nessuna — salta questa dimensione"] + list(df.columns)
+    colonne = [None] + list(df.columns)
     target_suggerito = suggerimenti.get("target")
-    target_default = target_suggerito if target_suggerito in df.columns else "Nessuna — salta questa dimensione"
+    target_default = target_suggerito if target_suggerito in df.columns else None
 
     target = st.selectbox(
-        "Colonna target — suggerita dall'LLM (puoi modificarla)",
+        t("target_suggested_label"),
         colonne,
         index=colonne.index(target_default) if target_default in colonne else 0,
+        format_func=lambda c: t("no_dimension_option") if c is None else c,
         key="bias_target"
     )
 
-    if target != "Nessuna — salta questa dimensione":
+    if target is not None:
         attributi_suggeriti = suggerimenti.get("attributi_sensibili", [])
         attributi_validi = [col for col in attributi_suggeriti if col in df.columns and col != target]
 
         attributi = st.multiselect(
-            "Attributi sensibili — suggeriti dall'LLM (puoi modificarli)",
+            t("attrs_suggested_label"),
             [col for col in df.columns if col != target],
             default=attributi_validi,
             key="bias_attributi"
@@ -114,7 +107,4 @@ def mostra_suggerimenti_llm(df, descrizione, settore):
     else:
         attributi = []
 
-    return (
-        target if target != "Nessuna — salta questa dimensione" else None,
-        attributi
-    )
+    return target, attributi
