@@ -20,7 +20,7 @@ NORMA is a tool for assessing dataset compliance with the AI Act (Art. 10). The 
    OPENROUTER_API_KEY=your-key-here
    ```
 
-   or later directly from the app's sidebar.
+   or later from the app's sidebar.
 
 ## Run the app
 
