@@ -355,9 +355,9 @@ def mostra_risultati():
 
     # ── Navigazione ──────────────────────────────────────────────────────────
     if st.button("← Torna all'inizio", use_container_width=True):
-    st.session_state.pagina = "home"
-    st.session_state.dataset = None
-    st.session_state.governance = {}
-    st.session_state.target = None
-    st.session_state.attributi_sensibili = []
-    st.rerun()
+        st.session_state.pagina = "home"
+        st.session_state.dataset = None
+        st.session_state.governance = {}
+        st.session_state.target = None
+        st.session_state.attributi_sensibili = []
+        st.rerun()
