@@ -78,7 +78,7 @@ COLONNE:
 {colonne_testo}
 
 Per ogni colonna: score 0-100 e spiegazione MAX 10 parole.
-Commento generale MAX 20 parole.
+Commento generale sulla rilevanza complessiva del dataset per il caso d'uso.
 
 Rispondi SOLO in JSON:
 {{
