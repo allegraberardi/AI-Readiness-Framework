@@ -62,30 +62,30 @@ def calcola_rilevanza(df, descrizione, settore):
 
     colonne_testo = "\n".join([f"- {col}: {desc}" for col, desc in colonne_info.items()])
 
+    # Limita le colonne a max 10 per evitare risposte JSON troppo lunghe
+    colonne_list = list(df.columns)[:10]
+    colonne_info_limited = {col: colonne_info[col] for col in colonne_list}
+    colonne_testo = "\n".join([f"- {col}: {desc}" for col, desc in colonne_info_limited.items()])
+
     prompt = f"""Sei un esperto di AI e del Regolamento Europeo sull'Intelligenza Artificiale (AI Act).
 
-Devi valutare la rilevanza di ogni colonna di un dataset rispetto al caso d'uso descritto dall'utente.
+Valuta la rilevanza di ogni colonna rispetto al caso d'uso.
 
 CASO D'USO: {descrizione}
-SETTORE AI ACT (Allegato III): {settore}
+SETTORE: {settore}
 
-COLONNE DEL DATASET:
+COLONNE:
 {colonne_testo}
 
-Per ogni colonna assegna:
-- uno score da 0 a 100 che indica quanto è rilevante per il caso d'uso (0 = completamente irrilevante, 100 = fondamentale)
-- una breve spiegazione del perché
+Per ogni colonna: score 0-100 e spiegazione MAX 10 parole.
+Commento generale MAX 20 parole.
 
-Rispondi SOLO in questo formato JSON, senza testo aggiuntivo:
+Rispondi SOLO in JSON:
 {{
   "valutazioni": [
-    {{
-      "colonna": "nome_colonna",
-      "score": 85,
-      "spiegazione": "Spiegazione breve del perché è rilevante o no"
-    }}
+    {{"colonna": "nome", "score": 85, "spiegazione": "breve"}}
   ],
-  "commento_generale": "Valutazione complessiva della rilevanza del dataset per il caso d'uso"
+  "commento_generale": "breve commento"
 }}"""
 
     try:
@@ -93,13 +93,23 @@ Rispondi SOLO in questo formato JSON, senza testo aggiuntivo:
         response = client.chat.completions.create(
             model="mistralai/mistral-large-2512",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1500,
+            max_tokens=2000,
             temperature=0.1
         )
 
         testo = response.choices[0].message.content.strip()
         testo = testo.replace("```json", "").replace("```", "").strip()
-        risultato_llm = json.loads(testo)
+
+        # Prova a riparare JSON troncato
+        try:
+            risultato_llm = json.loads(testo)
+        except json.JSONDecodeError:
+            # Tronca al ultimo elemento completo
+            idx = testo.rfind("}]")
+            if idx != -1:
+                testo = testo[:idx+2] + ', "commento_generale": "Analisi completata."}'
+                testo = '{"valutazioni": ' + testo[testo.find("["):] if '"valutazioni"' not in testo else testo
+            risultato_llm = json.loads(testo)
 
         # Costruisci dettaglio per ogni colonna
         dettaglio = []
